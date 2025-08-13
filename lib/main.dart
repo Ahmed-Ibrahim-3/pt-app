@@ -2,9 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'home_page.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
+import 'models/meal_model.dart';
 
+Future<void> _initHive() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  if (!Hive.isAdapterRegistered(1)){
+    Hive.registerAdapter(MealAdapter());
+  }
+}
 
 void main() async {
+  await _initHive();
   runApp(ProviderScope(child: MyApp()));
 }
 
