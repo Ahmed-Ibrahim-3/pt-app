@@ -2,8 +2,6 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:health/health.dart';
-import 'package:permission_handler/permission_handler.dart';
-
 import '/providers/nutrition_provider.dart';
 import '/models/meal_model.dart';
 
@@ -14,8 +12,6 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  int? _stepCount;
-  int? _heartRate;
 
   int _calorieGoal = 2400; 
 
@@ -25,31 +21,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   void initState() {
     super.initState();
   }
-
-  // Future<void> _initAndFetch() async {
-  //   final osOk = await _ensureAndroidRuntimePermissions();
-  //   if (!osOk) return;
-  // }
-
-  // Future<bool> _ensureAndroidRuntimePermissions() async {
-  //   if (!Platform.isAndroid) return true;
-
-  //   final req = <Permission>[
-  //     Permission.activityRecognition,
-  //     Permission.sensors,
-  //   ];
-
-  //   final toRequest = <Permission>[];
-  //   for (final p in req) {
-  //     if (await p.status != PermissionStatus.granted) {
-  //       toRequest.add(p);
-  //     }
-  //   }
-  //   if (toRequest.isEmpty) return true;
-
-  //   final results = await toRequest.request();
-  //   return results.values.every((s) => s.isGranted);
-  // }
 
   @override
   Widget build(BuildContext context) {
@@ -231,13 +202,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
     if (newGoal != null && mounted) {
       setState(() => _calorieGoal = newGoal);
-    }
-  }
-
-  Future<void> _debugLogMissingHCPerms(List<HealthDataType> types) async {
-    for (final t in types) {
-      final ok = await health.hasPermissions([t], permissions: [HealthDataAccess.READ]) ?? false;
-      debugPrint('HC perm for $t: ${ok ? "granted" : "MISSING"}');
     }
   }
 }

@@ -6,7 +6,10 @@ class MealDatabaseService {
   Box<Meal>? _box;
 
   Future<void> init() async {
-    _box ??= await Hive.openBox<Meal>(_boxName);
+  if (!Hive.isAdapterRegistered(1)) {
+    Hive.registerAdapter(MealAdapter());
+  }
+  _box ??= await Hive.openBox<Meal>(_boxName);
   }
 
   Box<Meal> get _requireBox {
