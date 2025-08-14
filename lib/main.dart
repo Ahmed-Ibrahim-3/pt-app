@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pt/providers/exercise_provider.dart';
 import 'home_page.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
 import 'models/meal_model.dart';
+import 'models/workout_plan.dart';
+import 'models/workout_plan_assignment.dart';
 
 Future<void> _initHive() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,6 +13,19 @@ Future<void> _initHive() async {
   if (!Hive.isAdapterRegistered(1)){
     Hive.registerAdapter(MealAdapter());
   }
+  Hive.registerAdapter(ExercisePlanAdapter());
+  Hive.registerAdapter(PlanAssignmentAdapter());
+  await Hive.openBox<ExercisePlan>(ExerciseHive.plansBox);
+  final plansBox = Hive.box<ExercisePlan>(ExerciseHive.plansBox);
+  final hasRest = plansBox.values.any((p) => p.name.trim().toLowerCase() == 'rest day');
+  if (!hasRest){
+    await plansBox.add(ExercisePlan(
+      name: "Rest Day",
+       exerciseIds: const [],
+        createdAt: DateTime.now(),
+        ));
+  }
+  await Hive.openBox<PlanAssignment>(ExerciseHive.assignmentsBox);
 }
 
 void main() async {

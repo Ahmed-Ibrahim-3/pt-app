@@ -280,7 +280,7 @@ class _MealCard extends StatelessWidget {
     String timeOf(Meal m) =>
         '${m.loggedAt.hour.toString().padLeft(2, '0')}:${m.loggedAt.minute.toString().padLeft(2, '0')}';
 
-    List<Widget> _maybeItemsFromNotes() {
+    List<Widget> maybeItemsFromNotes() {
       if (meal.notes == null || meal.notes!.isEmpty) return const [];
       try {
         final parsed = json.decode(meal.notes!) as Map<String, dynamic>;
@@ -331,7 +331,7 @@ class _MealCard extends StatelessWidget {
               'F ${meal.fat.toStringAsFixed(1)}g  ·  '
               '${timeOf(meal)}',
             ),
-            ..._maybeItemsFromNotes(),
+            ...maybeItemsFromNotes(),
           ],
         ),
       ),
@@ -620,6 +620,7 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
         SnackBar(content: Text('Failed to save meal: $e')),
       );
     }
+
   }
 
   Future<void> _deleteMeal() async {
@@ -807,7 +808,7 @@ class _FoodSelection {
 
   static _FoodSelection fromOFF(Map<String, dynamic> row, double grams) {
     final nutr = (row['nutriments'] as Map?)?.cast<String, dynamic>() ?? {};
-    double _get(List<String> keys) {
+    double get(List<String> keys) {
       for (final k in keys) {
         final v = nutr[k];
         if (v is num) return v.toDouble();
@@ -828,13 +829,13 @@ class _FoodSelection {
     return _FoodSelection(
       name: name,
       grams: grams,
-      kcal100: _get(const [
+      kcal100: get(const [
         'energy-kcal_100g',
         'energy-kcal_serving',
       ]),
-      p100: _get(const ['proteins_100g', 'proteins_serving']),
-      c100: _get(const ['carbohydrates_100g', 'carbohydrates_serving']),
-      f100: _get(const ['fat_100g', 'fat_serving']),
+      p100: get(const ['proteins_100g', 'proteins_serving']),
+      c100: get(const ['carbohydrates_100g', 'carbohydrates_serving']),
+      f100: get(const ['fat_100g', 'fat_serving']),
     );
   }
 
