@@ -53,9 +53,9 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
-        notchMargin: 12,
+        notchMargin: 16,
         color: cs.surface,
-        elevation: 8,
+        elevation: 12,
         child: SafeArea(
           top: false,
           child: SizedBox(
@@ -140,7 +140,7 @@ class _NavButton extends StatelessWidget {
       onTap: onTap,
       radius: 28,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
