@@ -34,7 +34,7 @@ class _PlanEditorPageState extends ConsumerState<PlanEditorPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.existing == null ? 'New Plan' : 'Edit Plan'),
+        title: Text(widget.existing == null ? 'New Workout' : 'Edit Plan'),
         actions: [
           TextButton(
             onPressed: () async {
@@ -107,7 +107,7 @@ class _PlanEditorPageState extends ConsumerState<PlanEditorPage> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Tip: type at least 2 letters or pick a muscle (free tier returns up to 5 results).',
+                'Tip: type at least 2 letters or pick a muscle.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),

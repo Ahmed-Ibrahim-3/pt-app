@@ -3,27 +3,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/exercise_provider.dart';
 import '../models/workout_plan.dart';
-import '../models/workout_plan_assignment.dart';
-import '../screens/workout_editor.dart';
+import 'workout_editor.dart';
+import 'workout_session.dart';
+
+const int kRestPlanKey = -1;
+enum _WorkoutsMenu { edit, delete }
 
 DateTime _mondayOfWeek(DateTime local) {
   final diff = local.weekday - DateTime.monday;
-  return DateTime(local.year, local.month, local.day)
-      .subtract(Duration(days: diff));
+  return DateTime(local.year, local.month, local.day).subtract(Duration(days: diff));
 }
 
-String _dateLabel(DateTime d) {
-  const wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  return '${wd[d.weekday - 1]} ${d.day}/${d.month}';
-}
+String _dowShort(DateTime d) =>
+    const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1];
 
-extension IterableFirstWhereOrNull<E> on Iterable<E> {
-  E? firstWhereOrNull(bool Function(E element) test) {
-    for (final e in this) {
-      if (test(e)) return e;
-    }
-    return null;
-  }
+String _parseNameFromStableId(String stableId) {
+  final parts = stableId.split('|');
+  return parts.isNotEmpty ? parts.first : stableId;
 }
 
 class ExerciseScreen extends ConsumerStatefulWidget {
@@ -35,14 +31,16 @@ class ExerciseScreen extends ConsumerStatefulWidget {
 class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
+  late DateTime _anchorMonday;
+  late DateTime _selectedDay;
 
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this)
-      ..addListener(() {
-        if (mounted) setState(() {}); 
-      });
+    _tab = TabController(length: 2, vsync: this);
+    final now = DateTime.now();
+    _anchorMonday = _mondayOfWeek(now);
+    _selectedDay = DateTime(now.year, now.month, now.day);
   }
 
   @override
@@ -51,252 +49,470 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
     super.dispose();
   }
 
+  void _selectDay(DateTime d) {
+    setState(() => _selectedDay = DateTime(d.year, d.month, d.day));
+  }
+
+  Future<void> _openAssignmentSheet(DateTime day) async {
+    _selectDay(day);
+    final plans = ref.read(plansStreamProvider).value ?? const <ExercisePlan>[];
+    final chosen = await showModalBottomSheet<_AssignAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        return _AssignmentSheet(
+          day: day,
+          plans: plans,
+        );
+      },
+    );
+
+    if (chosen == null) return;
+
+    final repo = ref.read(assignmentRepoProvider);
+    try {
+      if (chosen is _AssignSetPlan) {
+        await repo.assign(day, chosen.planKey); 
+        await repo.setCompleted(day, false); 
+      } else if (chosen is _AssignRest) {
+        await repo.assign(day, kRestPlanKey); 
+        await repo.setCompleted(day, false);
+      } else if (chosen is _AssignClear) {
+        await repo.clear(day);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Couldn’t update assignment: $e')));
+    }
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
+    final assignmentsAsync = ref.watch(weekAssignmentsProvider(_selectedDay));
     return Scaffold(
       appBar: AppBar(
         title: const Text('Exercise'),
         bottom: TabBar(
           controller: _tab,
-          tabs: const [Tab(text: 'Week'), Tab(text: 'Workouts')],
+          tabs: const [
+            Tab(text: 'Week'),
+            Tab(text: 'Workouts'),
+          ],
         ),
       ),
       body: TabBarView(
         controller: _tab,
-        children: const [_WeekTab(), _PlansTab()],
-      ),
-      floatingActionButton: _tab.index == 1
-          ? FloatingActionButton.extended(
-              icon: const Icon(Icons.add),
-              label: const Text('New Workout Plan'),
-              onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PlanEditorPage()),
-                );
-              },
-            )
-          : null,
-    );
-  }
-}
+        children: [
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: List.generate(7, (i) {
+                    final d = DateTime(_anchorMonday.year, _anchorMonday.month,
+                        _anchorMonday.day + i);
+                    final isSelected = _selectedDay.year == d.year &&
+                        _selectedDay.month == d.month &&
+                        _selectedDay.day == d.day;
+                    final isToday = DateTime.now().year == d.year &&
+                        DateTime.now().month == d.month &&
+                        DateTime.now().day == d.day;
 
-class _WeekTab extends ConsumerWidget {
-  const _WeekTab();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final now = DateTime.now();
-    final anchor = DateTime(now.year, now.month, now.day);
-    final weekMapAsync = ref.watch(weekAssignmentsProvider(anchor));
-
-    return weekMapAsync.when(
-      data: (Map<DateTime, PlanAssignment> weekMap) {
-        final monday = _mondayOfWeek(anchor);
-        final days = List.generate(
-          7,
-          (i) => DateTime(monday.year, monday.month, monday.day + i),
-        );
-        final today = DateTime.now();
-
-        return Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: _WeekStrip(days: days, weekMap: weekMap, today: today),
-        );
-      },
-      error: (e, _) => Center(child: Text('Error: $e')),
-      loading: () => const Center(child: CircularProgressIndicator()),
-    );
-  }
-}
-
-class _WeekStrip extends ConsumerWidget {
-  const _WeekStrip({
-    required this.days,
-    required this.weekMap,
-    required this.today,
-  });
-
-  final List<DateTime> days;
-  final Map<DateTime, PlanAssignment> weekMap;
-  final DateTime today;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final plans = ref.watch(plansStreamProvider).value ?? [];
-
-    return SizedBox(
-      height: 74, 
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        scrollDirection: Axis.horizontal,
-        itemCount: days.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) {
-          final d = days[i];
-          final assigned = weekMap[d];
-          final planName = assigned == null
-              ? '—'
-              : (plans
-                      .firstWhereOrNull((p) => (p.key as int) == assigned.planKey)
-                      ?.name ??
-                  '—');
-          final isToday =
-              d.year == today.year && d.month == today.month && d.day == today.day;
-
-          return InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () async {
-              final selected = await _showPlanPicker(context, ref);
-              if (selected != null) {
-                await ref
-                    .read(assignmentRepoProvider)
-                    .assign(d, selected.key as int);
-              } else { 
-                await ref.read(assignmentRepoProvider).clear(d);
-              }
-            },
-            onLongPress: () =>
-                ref.read(assignmentRepoProvider).clear(d), 
-            child: Container(
-              width: 110,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: isToday
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.grey.shade300,
-                  width: isToday ? 2 : 1,
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () => _selectDay(d), 
+                        onLongPress: () => _openAssignmentSheet(d),
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withValues(alpha: .12)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(_dowShort(d),
+                                  style: Theme.of(context).textTheme.labelMedium),
+                              const SizedBox(height: 4),
+                              CircleAvatar(
+                                radius: 14,
+                                backgroundColor: isToday
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).dividerColor,
+                                child: Text(
+                                  '${d.day}',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(color: Colors.white),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1],
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _dateLabel(d),
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 4),
-                  Flexible(
-                    child: Text(
-                      planName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
+
+              assignmentsAsync.when(
+                data: (assignments) {
+                  final a = assignments[_selectedDay];
+                  if (a == null) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.event_busy),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                  child: Text('No plan assigned for this day')),
+                              FilledButton(
+                                onPressed: () => _openAssignmentSheet(_selectedDay),
+                                child: const Text('Assign'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (a.planKey == kRestPlanKey) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Card(
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Icon(
+                                a.completed ? Icons.check_circle : Icons.self_improvement,
+                                color: a.completed ? Colors.green : null,
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(child: Text('Rest day')),
+                              TextButton(
+                                onPressed: () => _openAssignmentSheet(_selectedDay),
+                                child: const Text('Change'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  final plans = ref.read(plansStreamProvider).value ?? const <ExercisePlan>[];
+                  final plan = plans.firstWhere(
+                    (p) => p.key == a.planKey,
+                    orElse: () => ExercisePlan(
+                        name: 'Unknown plan',
+                        exerciseIds: const [],
+                        createdAt: DateTime.now()),
+                  );
+
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  a.completed ? Icons.check_circle : Icons.schedule,
+                                  color: a.completed ? Colors.green : null,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(plan.name,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium),
+                                ),
+                                FilledButton.icon(
+                                  onPressed: plan.exerciseIds.isEmpty
+                                      ? null
+                                      : () async {
+                                          if (!mounted) return;
+                                          await Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (_) => WorkoutSessionPage(
+                                                date: _selectedDay,
+                                                planKey: a.planKey,
+                                              ),
+                                            ),
+                                          );
+                                          setState(() {}); 
+                                        },
+                                  icon: const Icon(Icons.play_arrow),
+                                  label: const Text('Start'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            if (plan.exerciseIds.isEmpty)
+                              const Text(
+                                  'This plan has no exercises yet. Edit it in the Workouts tab.')
+                            else
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: -8,
+                                children: plan.exerciseIds
+                                    .map((id) => Chip(label: Text(_parseNameFromStableId(id))))
+                                    .toList(),
+                              ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: () => _openAssignmentSheet(_selectedDay),
+                                child: const Text('Change assignment'),
+                              ),
+                            )
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ],
+                  );
+                },
+                loading: () => const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: LinearProgressIndicator(),
+                ),
+                error: (e, _) => Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('Error: $e'),
+                ),
               ),
-            ),
-          );
-        },
+
+              const SizedBox(height: 8),
+
+              Expanded(
+                child: Center(
+                  child: Text(
+                    'Tip: long press a day to assign a plan or rest.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          _WorkoutsTab(onPlanEdited: () {
+            setState(() {});
+          }),
+        ],
       ),
     );
   }
 }
 
-Future<ExercisePlan?> _showPlanPicker(BuildContext context, WidgetRef ref) async {
-  final plans = await ref.read(plansStreamProvider.future);
-  return showModalBottomSheet<ExercisePlan>(
-    context: context,
-    showDragHandle: true,
-    builder: (_) => ListView.builder(
-      itemCount: plans.length + 1,
-      itemBuilder: (_, i) {
-        if (i == 0) {
-          return ListTile(
-            leading: const Icon(Icons.clear),
-            title: const Text('Clear assignment'),
-            onTap: () => Navigator.pop(context, null),
-          );
-        }
-        final p = plans[i - 1];
-        return ListTile(
-          leading: const Icon(Icons.playlist_add_check),
-          title: Text(p.name),
-          subtitle: Text('${p.exerciseIds.length} exercises'),
-          onTap: () => Navigator.pop(context, p),
-        );
-      },
-    ),
-  );
+sealed class _AssignAction {}
+class _AssignSetPlan extends _AssignAction {
+  final int planKey;
+  _AssignSetPlan(this.planKey);
+}
+class _AssignRest extends _AssignAction {}
+class _AssignClear extends _AssignAction {}
+
+class _AssignmentSheet extends StatelessWidget {
+  const _AssignmentSheet({required this.day, required this.plans});
+  final DateTime day;
+  final List<ExercisePlan> plans;
+
+  @override
+  Widget build(BuildContext context) {
+    final dateLabel =
+        '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Assign to $dateLabel',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.self_improvement),
+              title: const Text('Rest day'),
+              onTap: () => Navigator.pop(context, _AssignRest()),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 360),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: plans.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final p = plans[i];
+                    return ListTile(
+                      leading: const Icon(Icons.fitness_center),
+                      title: Text(p.name),
+                      subtitle: Text(
+                        p.exerciseIds.isEmpty
+                            ? 'No exercises yet'
+                            : '${p.exerciseIds.length} exercise(s)',
+                      ),
+                      onTap: () => Navigator.pop(context, _AssignSetPlan(p.key as int)),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.clear),
+              title: const Text('Clear assignment'),
+              onTap: () => Navigator.pop(context, _AssignClear()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _PlansTab extends ConsumerWidget {
-  const _PlansTab();
+class _WorkoutsTab extends ConsumerWidget {
+  const _WorkoutsTab({required this.onPlanEdited});
+  final VoidCallback onPlanEdited;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final plansAsync = ref.watch(plansStreamProvider);
 
-    return plansAsync.when(
-      data: (plans) {
-        if (plans.isEmpty) {
-          return Center(
-            child: TextButton.icon(
-              icon: const Icon(Icons.add),
-              label: const Text('Create your first Workout Plan'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PlanEditorPage()),
-              ),
-            ),
-          );
-        }
-        return ListView.separated(
-          itemCount: plans.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (_, i) {
-            final p = plans[i];
-            return ListTile(
-              title: Text(p.name),
-              subtitle: Text('${p.exerciseIds.length} exercises'),
-              trailing: PopupMenuButton(
-                onSelected: (value) async {
-                  if (value == 'edit') {
-                    await Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => PlanEditorPage(existing: p),
-                      ),
-                    );
-                  } else if (value == 'delete') {
-                    final yes = await showDialog<bool>(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('Delete plan?'),
-                        content: Text('Delete "${p.name}" permanently?'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          FilledButton(
-                            onPressed: () => Navigator.pop(context, true),
-                            child: const Text('Delete'),
-                          ),
-                        ],
-                      ),
-                    );
-                    if (yes == true) {
-                      await ref.read(planRepoProvider).delete(p.key);
-                    }
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'edit', child: Text('Edit')),
-                  PopupMenuItem(value: 'delete', child: Text('Delete')),
-                ],
+    return Scaffold(
+      body: plansAsync.when(
+        data: (plans) {
+          if (plans.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('No workout plans yet.'),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const PlanEditorPage()),
+                        );
+                        onPlanEdited();
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create a plan'),
+                    ),
+                  ],
+                ),
               ),
             );
-          },
-        );
-      },
-      error: (e, _) => Center(child: Text('Error: $e')),
-      loading: () => const Center(child: CircularProgressIndicator()),
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+            itemCount: plans.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, i) {
+              final p = plans[i];
+              return Card(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: ListTile(
+                  leading: const Icon(Icons.fitness_center),
+                  title: Text(p.name),
+                  subtitle: Text(
+                    p.exerciseIds.isEmpty
+                        ? 'No exercises yet'
+                        : '${p.exerciseIds.length} exercise(s)',
+                  ),
+                  trailing: PopupMenuButton<_WorkoutsMenu>(
+                    onSelected: (choice) async {
+                      switch (choice) {
+                        case _WorkoutsMenu.edit:
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => PlanEditorPage(existing: p)),
+                          );
+                          onPlanEdited();
+                          break;
+                        case _WorkoutsMenu.delete:
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              title: const Text('Delete plan?'),
+                              content: Text('This will remove "${p.name}". Any days assigned to it will be cleared.'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                                FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                              ],
+                            ),
+                          );
+                          if (confirm != true) return;
+
+                          final planKey = p.key as int;
+                          final cleared = await ref.read(assignmentRepoProvider).clearEverywhereForPlan(planKey);
+                          await ref.read(planRepoProvider).delete(planKey);
+
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Deleted "${p.name}" • cleared $cleared assignment(s).')),
+                            );
+                          }
+                          onPlanEdited();
+                          break;
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: _WorkoutsMenu.edit, child: Text('Edit')),
+                      PopupMenuItem(value: _WorkoutsMenu.delete, child: Text('Delete')),
+                    ],
+                  ),
+
+                ),
+              );
+            },
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PlanEditorPage()),
+          );
+          onPlanEdited();
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('New Workout'),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

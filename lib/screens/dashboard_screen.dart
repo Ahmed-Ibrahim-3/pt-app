@@ -10,6 +10,8 @@ import '/models/meal_model.dart';
 
 import '/models/workout_plan_assignment.dart';
 
+const int kRestPlanKey = -1;
+
 final _allMealsProvider = StreamProvider<List<Meal>>((ref) async* {
   final db = await ref.watch(readyMealDbProvider.future);
   yield db.getAllMeals();
@@ -226,51 +228,60 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  _MonthModel _buildMonthModel(List<Meal> allMeals, List<PlanAssignment> assignments) {
-    final now = DateTime.now();
-    final firstOfMonth = DateTime(now.year, now.month, 1);
-    final daysInMonth = DateUtils.getDaysInMonth(now.year, now.month);
+_MonthModel _buildMonthModel(List<Meal> allMeals, List<PlanAssignment> assignments) {
+  final now = DateTime.now();
+  final firstOfMonth = DateTime(now.year, now.month, 1);
+  final daysInMonth = DateUtils.getDaysInMonth(now.year, now.month);
 
-    final Map<DateTime, double> kcalByDay = {};
-    for (final m in allMeals) {
-      final d = DateTime(m.loggedAt.year, m.loggedAt.month, m.loggedAt.day);
-      if (d.month != now.month || d.year != now.year) continue;
-      kcalByDay[d] = (kcalByDay[d] ?? 0) + m.calories;
-    }
-
-    final Set<DateTime> exerciseDays = {};
-    for (final a in assignments) {
-      final d = DateTime(a.date.year, a.date.month, a.date.day);
-      if (d.month != now.month || d.year != now.year) continue;
-      exerciseDays.add(d);
-    }
-
-    final entries = <_DayStatus>[];
-    for (int i = 0; i < daysInMonth; i++) {
-      final d = DateTime(now.year, now.month, i + 1);
-      final kcal = kcalByDay[d] ?? 0.0;
-      final hasFood = kcal > 0.0;
-      bool foodPartial = false;
-      bool foodOver = false;
-      if (hasFood) {
-        final ratio = _calorieGoal <= 0 ? 0.0 : (kcal / _calorieGoal);
-        if (ratio > _overThreshold) {
-          foodOver = true;
-        } else if (ratio < _partialThreshold) {
-          foodPartial = true;
-        }
-      }
-      entries.add(_DayStatus(
-        date: d,
-        foodLogged: hasFood && !foodPartial,
-        foodPartial: foodPartial,
-        foodOver: foodOver,
-        exerciseLogged: exerciseDays.contains(d),
-      ));
-    }
-
-    return _MonthModel(firstOfMonth: firstOfMonth, daysInMonth: daysInMonth, days: entries);
+  final Map<DateTime, double> kcalByDay = {};
+  for (final m in allMeals) {
+    final d = DateTime(m.loggedAt.year, m.loggedAt.month, m.loggedAt.day);
+    if (d.month != now.month || d.year != now.year) continue;
+    kcalByDay[d] = (kcalByDay[d] ?? 0) + m.calories;
   }
+
+  final Set<DateTime> completedWorkoutDays = {};
+  for (final a in assignments) {
+    final d = DateTime(a.date.year, a.date.month, a.date.day);
+    if (d.month != now.month || d.year != now.year) continue;
+
+    final bool isWorkoutDay = (a.planKey != kRestPlanKey);
+    final bool finished = (a.completed == true);
+
+    if (isWorkoutDay && finished) {
+      completedWorkoutDays.add(d);
+    }
+  }
+
+  final entries = <_DayStatus>[];
+  for (int i = 0; i < daysInMonth; i++) {
+    final d = DateTime(now.year, now.month, i + 1);
+    final kcal = kcalByDay[d] ?? 0.0;
+    final hasFood = kcal > 0.0;
+
+    bool foodPartial = false;
+    bool foodOver = false;
+    if (hasFood) {
+      final ratio = _calorieGoal <= 0 ? 0.0 : (kcal / _calorieGoal);
+      if (ratio > _overThreshold) {
+        foodOver = true;
+      } else if (ratio < _partialThreshold) {
+        foodPartial = true;
+      }
+    }
+
+    entries.add(_DayStatus(
+      date: d,
+      foodLogged: hasFood && !foodPartial,
+      foodPartial: foodPartial,
+      foodOver: foodOver,
+      exerciseLogged: completedWorkoutDays.contains(d),
+    ));
+  }
+
+  return _MonthModel(firstOfMonth: firstOfMonth, daysInMonth: daysInMonth, days: entries);
+}
+
 
   Future<void> _editCalorieGoal() async {
     final controller = TextEditingController(text: _calorieGoal.toString());

@@ -8,6 +8,7 @@ import '../models/workout_plan_assignment.dart';
 class ExerciseHive {
   static const plansBox = 'exercise_plans';
   static const assignmentsBox = 'plan_assignments';
+  static const sessionsBox = 'workout_sessions';
 }
 
 const apiNinjasKey = String.fromEnvironment('API_NINJAS_KEY');
@@ -62,7 +63,7 @@ class ExercisePlanRepo {
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       return items;
     }
-    yield snapshot(); // immediate
+    yield snapshot();
     yield* box.watch().map((_) => snapshot());
   }
 
@@ -84,12 +85,11 @@ final plansStreamProvider = StreamProvider<List<ExercisePlan>>(
   (ref) => ref.watch(planRepoProvider).watchAll(),
 );
 
-// Replace the old int-based key:
 String _dateKey(DateTime local) {
   final d = DateTime(local.year, local.month, local.day);
   final mm = d.month.toString().padLeft(2, '0');
   final dd = d.day.toString().padLeft(2, '0');
-  return '${d.year}-$mm-$dd'; // e.g., 2025-08-11
+  return '${d.year}-$mm-$dd'; 
 }
 
 class AssignmentRepo {
@@ -102,7 +102,7 @@ class AssignmentRepo {
     final map = <DateTime, PlanAssignment>{};
     for (var i = 0; i < 7; i++) {
       final d = DateTime(monday.year, monday.month, monday.day + i);
-      final a = box.get(_dateKey(d)); // <-- now String key
+      final a = box.get(_dateKey(d)); 
       if (a != null) map[d] = a;
     }
     return map;
@@ -115,8 +115,21 @@ class AssignmentRepo {
 
   Future<void> assign(DateTime dayLocal, int planKey) async {
     final d = DateTime(dayLocal.year, dayLocal.month, dayLocal.day);
-    await box.put(_dateKey(d), PlanAssignment(date: d, planKey: planKey)); // String key
+    await box.put(_dateKey(d), PlanAssignment(date: d, planKey: planKey)); 
   }
+
+  Future<int> clearEverywhereForPlan(int planKey) async {
+    var cleared = 0;
+    for (final k in box.keys) {
+      final a = box.get(k);
+      if (a != null && a.planKey == planKey) {
+        await box.delete(k);
+        cleared++;
+      }
+    }
+    return cleared;
+  }
+
 
   Future<void> clear(DateTime dayLocal) async => box.delete(_dateKey(dayLocal));
 
