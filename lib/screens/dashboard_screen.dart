@@ -6,8 +6,9 @@ import 'package:intl/intl.dart';
 
 import '/providers/nutrition_provider.dart';
 import '/providers/exercise_provider.dart';
-import '/models/meal_model.dart';
+import '/providers/settings_provider.dart';
 
+import '/models/meal_model.dart';
 import '/models/workout_plan_assignment.dart';
 
 const int kRestPlanKey = -1;
@@ -31,22 +32,27 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  int _calorieGoal = 2400;
 
-  static const double _pPct = 0.30;
-  static const double _cPct = 0.45;
-  static const double _fPct = 0.25;
+  int _calorieGoal = 2400;
 
   static const double _partialThreshold = 0.65;
   static const double _overThreshold = 1.35;
 
+
   @override
   Widget build(BuildContext context) {
     final mealsTodayAsync = ref.watch(mealsForTodayProvider);
-
+    final settings = ref.watch(settingsProvider);
+    final displayName = settings.maybeWhen(
+      data: (s) {
+        final n = s.name.trim();
+        return n.isEmpty ? 'User' : n.split(' ').first; 
+      },
+      orElse: () => 'User',
+    );
     return Scaffold(
     appBar: AppBar(
-      title: Text('Welcome Back, User!', style: Theme.of(context).textTheme.titleLarge),),
+      title: Text('Welcome Back, $displayName!', style: Theme.of(context).textTheme.titleLarge),),
       body: RefreshIndicator(
         onRefresh: () async => setState(() {}),
         child: SingleChildScrollView(
@@ -70,22 +76,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildTopCard(BuildContext context, List<Meal> mealsToday) {
+
+    final targets = ref.watch(macroTargetsProvider);
+
     final consumedKcal = mealsToday.fold<double>(0, (a, m) => a + m.calories);
     final consumedP = mealsToday.fold<double>(0, (a, m) => a + m.protein);
     final consumedC = mealsToday.fold<double>(0, (a, m) => a + m.carbs);
     final consumedF = mealsToday.fold<double>(0, (a, m) => a + m.fat);
 
-    final kcalGoal = _calorieGoal.toDouble().clamp(0, double.infinity);
+    final kcalGoal = targets.calories.toDouble().clamp(0, double.infinity);
     final remainingKcal = math.max(0.0, kcalGoal - consumedKcal);
     final pctKcal = kcalGoal <= 0 ? 0.0 : (consumedKcal / kcalGoal).clamp(0.0, 1.0);
 
-    final goalP = (kcalGoal * _pPct) / 4.0;
-    final goalC = (kcalGoal * _cPct) / 4.0;
-    final goalF = (kcalGoal * _fPct) / 9.0;
-
-    final remP = math.max(0.0, goalP - consumedP);
-    final remC = math.max(0.0, goalC - consumedC);
-    final remF = math.max(0.0, goalF - consumedF);
+    final remP = math.max(0.0, targets.proteinG - consumedP);
+    final remC = math.max(0.0, targets.carbsG - consumedC);
+    final remF = math.max(0.0, targets.fatG - consumedF);
 
     return Card(
       elevation: 4,
@@ -158,21 +163,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     children: [
                       _MacroBar(
                         label: 'Protein',
-                        remaining: remP, goal: goalP,
+                        remaining: remP, goal: targets.proteinG.toDouble(), 
                         icon: Icons.fitness_center, units: 'g',
                         color: Colors.red,
                       ),
                       const SizedBox(width: 0),
                       _MacroBar(
                         label: 'Carbs',
-                        remaining: remC, goal: goalC,
+                        remaining: remC, goal: targets.carbsG.toDouble(),
                         icon: Icons.grain, units: 'g',
                         color: Colors.blue,
                       ),
                       const SizedBox(width: 0),
                       _MacroBar(
                         label: 'Fat',
-                        remaining: remF, goal: goalF,
+                        remaining: remF, goal: targets.fatG.toDouble(),
                         icon: Icons.egg, units: 'g',
                         color: Colors.yellow,
                       ),
