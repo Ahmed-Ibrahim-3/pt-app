@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pt/providers/exercise_provider.dart';
-import 'home_page.dart'; 
 import 'package:hive_flutter/hive_flutter.dart';
+
+import 'providers/exercise_provider.dart';
+
+import 'home_page.dart'; 
+
 import 'models/meal_model.dart';
 import 'models/workout_plan.dart';
 import 'models/workout_plan_assignment.dart';
 import 'models/workout_session.dart';
+import 'models/saved_meal.dart';
 
 Future<void> _initHive() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,6 +26,7 @@ Future<void> _initHive() async {
   Hive.registerAdapter(WorkoutEntryAdapter());
   Hive.registerAdapter(SetEntryAdapter());
   await Hive.openBox<WorkoutSession>(ExerciseHive.sessionsBox);
+  Hive.registerAdapter(SavedMealAdapter());
 }
 
 void main() async {
