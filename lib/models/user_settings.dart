@@ -24,6 +24,7 @@ class UserSettings {
   final Goal goal;
   final Units units;
   final ActivityLevel activity;
+  final String defaultGym; 
 
   const UserSettings({
     required this.name,
@@ -34,6 +35,7 @@ class UserSettings {
     required this.goal,
     required this.units,
     required this.activity,
+    this.defaultGym = '',
   });
 
   factory UserSettings.initial() => const UserSettings(
@@ -45,6 +47,7 @@ class UserSettings {
         goal: Goal.maintain,
         units: Units.metric,
         activity: ActivityLevel.moderate,
+        defaultGym: '', 
       );
 
   UserSettings copyWith({
@@ -56,6 +59,7 @@ class UserSettings {
     Goal? goal,
     Units? units,
     ActivityLevel? activity,
+    String? defaultGym,
   }) {
     return UserSettings(
       name: name ?? this.name,
@@ -66,6 +70,7 @@ class UserSettings {
       goal: goal ?? this.goal,
       units: units ?? this.units,
       activity: activity ?? this.activity,
+      defaultGym: defaultGym ?? this.defaultGym, 
     );
   }
 
@@ -78,6 +83,7 @@ class UserSettings {
         'goal': goal.name,
         'units': units.name,
         'activity': activity.name,
+        'defaultGym': defaultGym, 
       };
 
   factory UserSettings.fromJson(Map<String, dynamic> map) {
@@ -95,6 +101,7 @@ class UserSettings {
       goal: goal(map['goal'] as String? ?? 'maintain'),
       units: u(map['units'] as String? ?? 'metric'),
       activity: a(map['activity'] as String? ?? 'moderate'),
+      defaultGym: (map['defaultGym'] ?? '') as String, 
     );
   }
 
@@ -103,10 +110,10 @@ class UserSettings {
 }
 
 class MacroTargets {
-  final int calories;      
-  final int proteinG;      
-  final int fatG;         
-  final int carbsG;     
+  final int calories;
+  final int proteinG;
+  final int fatG;
+  final int carbsG;
   const MacroTargets({
     required this.calories,
     required this.proteinG,

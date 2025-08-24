@@ -13,9 +13,13 @@ class PlanAssignment extends HiveObject {
   @HiveField(2)
   bool completed;
 
+  @HiveField(3)
+  String? location;
+
   PlanAssignment({
     required this.date,
     required this.planKey,
     this.completed = false,
+    this.location,
   });
 }

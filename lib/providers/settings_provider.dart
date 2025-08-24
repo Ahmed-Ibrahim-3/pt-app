@@ -45,6 +45,14 @@ class SettingsNotifier extends AsyncNotifier<UserSettings> {
   void setActivity(ActivityLevel a) =>
       _save((state.value ?? UserSettings.initial()).copyWith(activity: a));
 
+  Future<void> setDefaultGym(String v) async {
+    final cur = state.value ?? UserSettings.initial();
+    final next = cur.copyWith(defaultGym: v);
+    await _save(next); 
+    state = AsyncData(next);
+  }
+
+
   static double _rmr(UserSettings s) {
     final w = s.weightKg;
     final h = s.heightCm;

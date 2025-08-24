@@ -140,6 +140,15 @@ class AssignmentRepo {
       await a.save();
     }
   }
+
+  Future<void> setLocation(DateTime day, String? location) async {
+    final d = DateTime(day.year, day.month, day.day); 
+    final a = box.get(_dateKey(d)); 
+    if (a != null) {
+      a.location = (location?.trim().isEmpty ?? true) ? null : location!.trim();
+      await a.save();
+    }
+  }
 }
 
 

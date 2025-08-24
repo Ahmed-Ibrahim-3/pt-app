@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../providers/exercise_provider.dart';
-import '../models/workout_plan.dart';
+import '/providers/exercise_provider.dart';
+
+import '/models/workout_plan.dart';
+
+import 'workout_viewer.dart';
 import 'workout_editor.dart';
 import 'workout_session.dart';
 
@@ -230,7 +233,7 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
                         exerciseIds: const [],
                         createdAt: DateTime.now()),
                   );
-
+                  
                   return Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Card(
@@ -250,31 +253,46 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
-                                  child: Text(plan.name,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium),
+                                  child: Text(plan.name, style: Theme.of(context).textTheme.titleMedium),
                                 ),
-                                FilledButton.icon(
-                                  onPressed: plan.exerciseIds.isEmpty
-                                      ? null
-                                      : () async {
-                                          if (!mounted) return;
-                                          await Navigator.of(context).push(
-                                            MaterialPageRoute(
-                                              builder: (_) => WorkoutSessionPage(
-                                                date: _selectedDay,
-                                                planKey: a.planKey,
+                                if (a.completed)
+                                  FilledButton.icon(
+                                    onPressed: () async {
+                                      await Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => WorkoutSummaryPage(
+                                            date: _selectedDay,
+                                            planKey: a.planKey,
+                                          ),
+                                        ),
+                                      );
+                                      setState(() {}); 
+                                    },
+                                    icon: const Icon(Icons.visibility),
+                                    label: const Text('View'),
+                                  )
+                                else
+                                  FilledButton.icon(
+                                    onPressed: plan.exerciseIds.isEmpty
+                                        ? null
+                                        : () async {
+                                            if (!mounted) return;
+                                            await Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) => WorkoutSessionPage(
+                                                  date: _selectedDay,
+                                                  planKey: a.planKey,
+                                                ),
                                               ),
-                                            ),
-                                          );
-                                          setState(() {}); 
-                                        },
-                                  icon: const Icon(Icons.play_arrow),
-                                  label: const Text('Start'),
-                                ),
+                                            );
+                                            setState(() {}); 
+                                          },
+                                    icon: const Icon(Icons.play_arrow),
+                                    label: const Text('Start'),
+                                  ),
                               ],
                             ),
+
                             const SizedBox(height: 12),
                             if (plan.exerciseIds.isEmpty)
                               const Text(
@@ -288,13 +306,28 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
                                     .toList(),
                               ),
                             const SizedBox(height: 8),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
+                            Row(
+                              children:[
+                                 
+                              if (a.completed && (a.location != null && a.location!.trim().isNotEmpty))
+                                Row( 
+                                  children: [
+                                    const Icon(Icons.location_on, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Completed at: ${a.location!}',
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                                      overflow: TextOverflow.ellipsis
+                                    )
+                                  ]
+                                ),
+                              const Spacer(),
+                                TextButton(
                                 onPressed: () => _openAssignmentSheet(_selectedDay),
                                 child: const Text('Change assignment'),
                               ),
-                            )
+                              ]
+                            ),
                           ],
                         ),
                       ),

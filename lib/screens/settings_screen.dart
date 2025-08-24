@@ -14,6 +14,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _nameCtrl = TextEditingController();
   final _ageCtrl = TextEditingController();
+  final _defaultGymCtrl = TextEditingController();
 
   final _heightCmCtrl = TextEditingController();
   final _weightKgCtrl = TextEditingController();
@@ -34,6 +35,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _heightFtCtrl.dispose();
     _heightInCtrl.dispose();
     _weightLbCtrl.dispose();
+    _defaultGymCtrl.dispose();
     super.dispose();
   }
 
@@ -41,6 +43,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _seeding = true;
     _nameCtrl.text = s.name;
     _ageCtrl.text = s.ageYears.toString();
+    _defaultGymCtrl.text = s.defaultGym;
 
     if (s.units == Units.metric) {
       _heightCmCtrl.text = s.heightCm.toStringAsFixed(0);
@@ -163,6 +166,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _defaultGymCtrl,
+                      decoration: const InputDecoration(labelText: 'Default gym (optional)'),
+                      textInputAction: TextInputAction.done,
+                      onChanged: (v) {
+                        if (_seeding) return;
+                        ref.read(settingsProvider.notifier).setDefaultGym(v.trim());
+                      },
                     ),
                   ],
                 ),

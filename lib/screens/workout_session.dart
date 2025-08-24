@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/workout_plan.dart';
-import '../models/workout_session.dart';
-import '../providers/exercise_provider.dart';
-import '../providers/workout_provider.dart';
+
+import '/models/workout_plan.dart';
+import '/models/workout_session.dart';
+
+import '/providers/exercise_provider.dart';
+import '/providers/workout_provider.dart';
+import '/providers/settings_provider.dart';
 
 class WorkoutSessionPage extends ConsumerStatefulWidget {
   const WorkoutSessionPage({super.key, required this.date, required this.planKey});
@@ -18,10 +21,19 @@ class _WorkoutSessionPageState extends ConsumerState<WorkoutSessionPage> {
   WorkoutSession? _session;
   ExercisePlan? _plan;
 
+  final _completedAtCtrl = TextEditingController();
+  bool _seededCompletedAt = false;
+
   @override
   void initState() {
     super.initState();
     _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    _completedAtCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _bootstrap() async {
@@ -44,6 +56,11 @@ class _WorkoutSessionPageState extends ConsumerState<WorkoutSessionPage> {
 
   Future<void> _finish() async {
     final sessions = ref.read(workoutSessionRepoProvider);
+    final locationText = _completedAtCtrl.text.trim();
+    await ref.read(assignmentRepoProvider).setLocation(
+      widget.date,
+       locationText.isNotEmpty ? locationText : null
+      );
     await sessions.complete(widget.date);
     await ref.read(assignmentRepoProvider).setCompleted(widget.date, true);
     if (mounted) Navigator.pop(context);
@@ -58,12 +75,24 @@ class _WorkoutSessionPageState extends ConsumerState<WorkoutSessionPage> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final settingsAsync = ref.watch(settingsProvider);
+    settingsAsync.whenData((settings) {
+      if (!_seededCompletedAt && _completedAtCtrl.text.isEmpty) {
+        _completedAtCtrl.text = settings.defaultGym; 
+        _seededCompletedAt = true;
+      }
+    });
+
+
+    final canFinish = ses.entries.isNotEmpty && ses.entries.every((e) => e.done == true);
+
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(plan.name),
         actions: [
           IconButton(
-            onPressed: _finish,
+            onPressed: canFinish ? _finish : null, 
             icon: const Icon(Icons.check),
             tooltip: 'Finish workout',
           ),
@@ -88,16 +117,42 @@ class _WorkoutSessionPageState extends ConsumerState<WorkoutSessionPage> {
           );
         },
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          child: FilledButton.icon(
-            onPressed: _finish,
-            icon: const Icon(Icons.flag),
-            label: const Text('Finish workout'),
+      bottomNavigationBar: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: SafeArea(
+          top: false,
+          child: Material(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            elevation: 8,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _completedAtCtrl,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                      labelText: 'Completed at (optional)',
+                      prefixIcon: Icon(Icons.location_on_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: canFinish ? _finish : null,
+                    icon: const Icon(Icons.flag),
+                    label: const Text('Finish workout'),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
+
     );
   }
 
@@ -171,6 +226,15 @@ class _ExerciseCardState extends State<_ExerciseCard> {
     widget.onChanged(_local);
   }
 
+  void _removeSet() {
+    setState(() {
+      if (_local.sets.length > 1) {
+        _local.sets.removeLast();
+      }
+    });
+    widget.onChanged(_local);
+  }
+
   void _toggleExercise(bool? v) {
     setState(() => _local.done = v ?? false);
     widget.onChanged(_local);
@@ -190,80 +254,108 @@ class _ExerciseCardState extends State<_ExerciseCard> {
               Expanded(
                 child: Text(widget.name, style: Theme.of(context).textTheme.titleMedium),
               ),
-              IconButton(
-                tooltip: 'Instructions',
-                onPressed: widget.onInfo,
-                icon: const Icon(Icons.info_outline),
-              ),
+              if (!_local.done)
+                IconButton(
+                  tooltip: 'Instructions',
+                  onPressed: widget.onInfo,
+                  icon: const Icon(Icons.info_outline),
+                ),
             ]),
             const SizedBox(height: 8),
-            ...List.generate(_local.sets.length, (i) {
-              final s = _local.sets[i];
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Text('Set ${i + 1}'),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 80,
-                      child: TextFormField(
-                        initialValue: s.reps == 0 ? '' : s.reps.toString(),
-                        decoration: const InputDecoration(
-                          labelText: 'Reps',
-                          isDense: true,
-                          border: OutlineInputBorder(),
+
+            if (!_local.done) ...[
+              ...List.generate(_local.sets.length, (i) {
+                final s = _local.sets[i];
+                final done = s.done == true;
+                final strike = done ? TextDecoration.lineThrough : TextDecoration.none;
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Text('Set ${i + 1}', style: TextStyle(decoration: strike)),
+                      const SizedBox(width: 12),
+
+                      SizedBox(
+                        width: 80,
+                        child: TextFormField(
+                          initialValue: s.reps == 0 ? '' : s.reps.toString(),
+                          decoration: const InputDecoration(
+                            labelText: 'Reps',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: TextInputType.number,
+                          enabled: !done, 
+                          style: TextStyle(decoration: strike), 
+                          onChanged: (v) {
+                            if (done) return; 
+                            final reps = int.tryParse(v) ?? 0;
+                            setState(() => _local.sets[i] = SetEntry(reps: reps, weight: s.weight, done: s.done));
+                            widget.onChanged(_local);
+                          },
                         ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (v) {
-                          final reps = int.tryParse(v) ?? 0;
-                          setState(() => _local.sets[i] = SetEntry(reps: reps, weight: s.weight, done: s.done));
-                          widget.onChanged(_local);
-                        },
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    SizedBox(
-                      width: 110,
-                      child: TextFormField(
-                        initialValue: s.weight == 0 ? '' : s.weight.toStringAsFixed(1),
-                        decoration: const InputDecoration(
-                          labelText: 'Weight (kg)',
-                          isDense: true,
-                          border: OutlineInputBorder(),
+
+                      const SizedBox(width: 12),
+
+                      SizedBox(
+                        width: 110,
+                        child: TextFormField(
+                          initialValue: s.weight == 0 ? '' : s.weight.toStringAsFixed(1),
+                          decoration: const InputDecoration(
+                            labelText: 'Weight (kg)',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          enabled: !done, 
+                          style: TextStyle(decoration: strike), 
+                          onChanged: (v) {
+                            if (done) return; 
+                            final w = double.tryParse(v) ?? 0;
+                            setState(() => _local.sets[i] = SetEntry(reps: s.reps, weight: w, done: s.done));
+                            widget.onChanged(_local);
+                          },
                         ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        onChanged: (v) {
-                          final w = double.tryParse(v) ?? 0;
-                          setState(() => _local.sets[i] = SetEntry(reps: s.reps, weight: w, done: s.done));
-                          widget.onChanged(_local);
-                        },
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Checkbox(
-                      value: s.done,
-                      onChanged: (v) {
-                        setState(() => _local.sets[i] = SetEntry(
+
+                      const SizedBox(width: 12),
+
+                      Checkbox(
+                        value: s.done,
+                        onChanged: (v) {
+                          setState(() {
+                            _local.sets[i] = SetEntry(
                               reps: s.reps,
                               weight: s.weight,
                               done: v ?? false,
-                            ));
-                        widget.onChanged(_local);
-                      },
-                    ),
-                  ],
-                ),
-              );
-            }),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _addSet,
-                icon: const Icon(Icons.add),
-                label: const Text('Add set'),
+                            );
+                          });
+                          widget.onChanged(_local);
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              }),
+
+              Row(
+                children: [
+                  FilledButton.icon(
+                    onPressed: _addSet,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add set'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: _local.sets.length > 1 ? _removeSet : null,
+                    icon: const Icon(Icons.remove),
+                    label: const Text('Remove set'),
+                  ),
+                ],
               ),
-            ),
+            ],
           ],
         ),
       ),
