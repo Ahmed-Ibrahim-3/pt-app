@@ -18,15 +18,13 @@ Future<void> _initHive() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
 
-  // Register all adapters you use
-  Hive.registerAdapter(MealAdapter());                 // typeId: 1 (per your project)
-  Hive.registerAdapter(ExercisePlanAdapter());         // typeId: 2
-  Hive.registerAdapter(PlanAssignmentAdapter());       // typeId: 3
-  Hive.registerAdapter(WorkoutSessionAdapter());       // typeId: 4
-  Hive.registerAdapter(WorkoutEntryAdapter());         // typeId: 5
-  Hive.registerAdapter(SetEntryAdapter());             // typeId: 6
+  Hive.registerAdapter(MealAdapter());              
+  Hive.registerAdapter(ExercisePlanAdapter());     
+  Hive.registerAdapter(PlanAssignmentAdapter());     
+  Hive.registerAdapter(WorkoutSessionAdapter());      
+  Hive.registerAdapter(WorkoutEntryAdapter());      
+  Hive.registerAdapter(SetEntryAdapter());          
 
-  // Open boxes (names must match)
   await Hive.openBox<Meal>('meals_box');
   await Hive.openBox<ExercisePlan>(ExerciseHive.plansBox);
   await Hive.openBox<PlanAssignment>(ExerciseHive.assignmentsBox);
