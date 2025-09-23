@@ -1,37 +1,47 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:pt/firebase_options.dart';
 
-import 'providers/exercise_provider.dart';
-
-import 'home_page.dart'; 
-
+import 'auth_gate.dart';
 import 'models/meal_model.dart';
 import 'models/workout_plan.dart';
 import 'models/workout_plan_assignment.dart';
 import 'models/workout_session.dart';
-import 'models/saved_meal.dart';
+import 'providers/exercise_provider.dart';
 
 Future<void> _initHive() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
-  if (!Hive.isAdapterRegistered(1)){
-    Hive.registerAdapter(MealAdapter());
-  }
-  Hive.registerAdapter(ExercisePlanAdapter());
-  Hive.registerAdapter(PlanAssignmentAdapter());
+
+  // Register all adapters you use
+  Hive.registerAdapter(MealAdapter());                 // typeId: 1 (per your project)
+  Hive.registerAdapter(ExercisePlanAdapter());         // typeId: 2
+  Hive.registerAdapter(PlanAssignmentAdapter());       // typeId: 3
+  Hive.registerAdapter(WorkoutSessionAdapter());       // typeId: 4
+  Hive.registerAdapter(WorkoutEntryAdapter());         // typeId: 5
+  Hive.registerAdapter(SetEntryAdapter());             // typeId: 6
+
+  // Open boxes (names must match)
+  await Hive.openBox<Meal>('meals_box');
   await Hive.openBox<ExercisePlan>(ExerciseHive.plansBox);
   await Hive.openBox<PlanAssignment>(ExerciseHive.assignmentsBox);
-  Hive.registerAdapter(WorkoutSessionAdapter());
-  Hive.registerAdapter(WorkoutEntryAdapter());
-  Hive.registerAdapter(SetEntryAdapter());
   await Hive.openBox<WorkoutSession>(ExerciseHive.sessionsBox);
-  Hive.registerAdapter(SavedMealAdapter());
 }
 
 void main() async {
   await _initHive();
-  runApp(ProviderScope(child: MyApp()));
+  await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+
+    unawaited(GoogleSignIn.instance.initialize()
+        .then((_) => GoogleSignIn.instance.attemptLightweightAuthentication()));
+    runApp(ProviderScope(child: MyApp()));
 }
 
 class MyApp extends StatelessWidget {
@@ -65,8 +75,9 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const HomePage(),
+      home: const AuthGate(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
+

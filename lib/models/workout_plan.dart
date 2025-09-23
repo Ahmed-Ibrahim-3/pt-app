@@ -22,4 +22,19 @@ class ExercisePlan extends HiveObject {
     required this.createdAt,
     this.updatedAt,
   });
+
+    Map<String, dynamic> toMap() => {
+    'name': name,
+    'exerciseIds': exerciseIds,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt?.toIso8601String(),
+  };
+
+  factory ExercisePlan.fromMap(Map<String, dynamic> m) => ExercisePlan(
+    name: m['name'] as String,
+    exerciseIds: (m['exerciseIds'] as List).cast<String>(),
+    createdAt: DateTime.parse(m['createdAt'] as String),
+    updatedAt: m['updatedAt'] == null ? null : DateTime.parse(m['updatedAt'] as String),
+  );
+
 }

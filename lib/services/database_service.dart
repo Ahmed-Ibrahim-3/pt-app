@@ -61,4 +61,16 @@ class MealDatabaseService {
     final box = _requireBox;
     await box.clear();
   }
+
+  List<Map<String, dynamic>> exportAll() => getAllMeals().map((m) => m.toMap()).toList();
+
+  Future<void> replaceAll(List<Map<String, dynamic>> meals) async {
+    final box = _requireBox;
+    await box.clear();
+    for (final m in meals) {
+      final meal = Meal.fromMap(m);
+      await box.put(meal.id, meal);
+    }
+  }
+
 }

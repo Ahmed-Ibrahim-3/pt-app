@@ -22,4 +22,19 @@ class PlanAssignment extends HiveObject {
     this.completed = false,
     this.location,
   });
+
+    Map<String, dynamic> toMap() => {
+    'date': date.toIso8601String(),
+    'planKey': planKey,
+    'completed': completed,
+    'location': location,
+  };
+
+  factory PlanAssignment.fromMap(Map<String, dynamic> m) => PlanAssignment(
+    date: DateTime.parse(m['date'] as String),
+    planKey: (m['planKey'] as num).toInt(),
+    completed: (m['completed'] ?? false) as bool,
+    location: m['location'] as String?,
+  );
+
 }

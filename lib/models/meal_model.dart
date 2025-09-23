@@ -38,4 +38,27 @@ class Meal extends HiveObject {
     required this.loggedAt,
     this.notes,
   });
+
+    Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'calories': calories,
+    'protein': protein,
+    'carbs': carbs,
+    'fat': fat,
+    'loggedAt': loggedAt.toIso8601String(),
+    'notes': notes,
+  };
+
+  factory Meal.fromMap(Map<String, dynamic> m) => Meal(
+    id: m['id'] as String,
+    name: m['name'] as String,
+    calories: (m['calories'] ?? 0).toDouble(),
+    protein: (m['protein'] ?? 0).toDouble(),
+    carbs: (m['carbs'] ?? 0).toDouble(),
+    fat: (m['fat'] ?? 0).toDouble(),
+    loggedAt: DateTime.parse(m['loggedAt'] as String),
+    notes: m['notes'] as String?,
+  );
+
 }

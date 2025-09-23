@@ -4,6 +4,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_settings.dart';
 import '../providers/settings_provider.dart';
+import '../providers/auth_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -26,6 +27,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _seeding = false;
   bool _seededOnce = false; 
 
+  String? _lastSeedSig;
+  String _sig(UserSettings s) => [
+    s.name,
+    s.gender.name,
+    s.ageYears,
+    s.units.name,
+    s.heightCm.toStringAsFixed(3),
+    s.weightKg.toStringAsFixed(3),
+    s.goal.name,
+    s.activity.name,
+    s.experience.name,
+    s.defaultGym,
+  ].join('|');
+
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -44,6 +60,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _nameCtrl.text = s.name;
     _ageCtrl.text = s.ageYears.toString();
     _defaultGymCtrl.text = s.defaultGym;
+    
 
     if (s.units == Units.metric) {
       _heightCmCtrl.text = s.heightCm.toStringAsFixed(0);
@@ -60,28 +77,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _weightKgCtrl.clear();
     }
     _seeding = false;
+    _lastSeedSig = _sig(s);
   }
 
   @override
   Widget build(BuildContext context) {
     final sAsync = ref.watch(settingsProvider);
     final targets = ref.watch(macroTargetsProvider);
+    final auth = ref.read(authServiceProvider);
 
     sAsync.whenData((s) {
-      if (!_seededOnce) {
+      final sig = _sig(s);
+      if (_lastSeedSig != sig) {
         SchedulerBinding.instance.addPostFrameCallback((_) => _seedControllersFrom(s));
-        _seededOnce = true;
       }
     });
 
     ref.listen<AsyncValue<UserSettings>>(settingsProvider, (prev, next) {
-      final prevUnits = prev?.valueOrNull?.units;
-      final nextUnits = next.valueOrNull?.units;
-      if (prevUnits != nextUnits && nextUnits != null) {
-        SchedulerBinding.instance.addPostFrameCallback((_) {
-          final s = next.value!;
-          _seedControllersFrom(s);
-        });
+      final s = next.valueOrNull;
+      if (s == null) return;
+      final sig = _sig(s);
+      if (_lastSeedSig != sig) {
+        SchedulerBinding.instance.addPostFrameCallback((_) => _seedControllersFrom(s));
       }
     });
 
@@ -105,6 +122,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(height: 12),
                     Row(
+                      crossAxisAlignment : CrossAxisAlignment.end,
                       children: [
                         Expanded(
                           child: _Dropdown<Gender>(
@@ -153,29 +171,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: _Dropdown<Goal>(
-                            label: 'Goal',
-                            value: s.goal,
+                         Expanded(
+                          child: _Dropdown<ExperienceLevel>(
+                            value: s.experience,
+                            label: 'Experience',
                             items: const {
-                              Goal.lose: 'Lose weight',
-                              Goal.maintain: 'Maintain',
-                              Goal.gain: 'Gain weight',
+                              ExperienceLevel.beginner : "Beginner",
+                              ExperienceLevel.novice : "Novice",
+                              ExperienceLevel.intermediate : "Intermediate",
+                              ExperienceLevel.advanced : "Advanced",
+                              ExperienceLevel.expert: 'Expert'
                             },
-                            onChanged: (g) => ref.read(settingsProvider.notifier).setGoal(g),
+                            onChanged: (e) => ref.read(settingsProvider.notifier).setExperience(e)
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: _defaultGymCtrl,
-                      decoration: const InputDecoration(labelText: 'Default gym (optional)'),
-                      textInputAction: TextInputAction.done,
-                      onChanged: (v) {
-                        if (_seeding) return;
-                        ref.read(settingsProvider.notifier).setDefaultGym(v.trim());
-                      },
+                    Row(
+                      crossAxisAlignment : CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                            child: _Dropdown<Goal>(
+                              label: 'Goal',
+                              value: s.goal,
+                              items: const {
+                                Goal.lose: 'Lose weight',
+                                Goal.maintain: 'Maintain',
+                                Goal.gain: 'Gain weight',
+                              },
+                              onChanged: (g) => ref.read(settingsProvider.notifier).setGoal(g),
+                            ),
+                          ),
+                          const SizedBox(width: 12),  
+                          Expanded(
+                            child: TextField(
+                              controller: _defaultGymCtrl,
+                              decoration: const InputDecoration(labelText: 'Default gym (optional)'),
+                              textInputAction: TextInputAction.done,
+                              onChanged: (v) {
+                                if (_seeding) return;
+                                ref.read(settingsProvider.notifier).setDefaultGym(v.trim());
+                              },
+                            ),
+                          ),
+                      ]
                     ),
                   ],
                 ),
@@ -277,6 +317,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _Section(
                 title: 'Account',
                 child: const Text('Linked email, subscription, sign-out, etc. – coming soon.'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.logout),
+                title: const Text('Sign out'),
+                onTap: () => auth.signOut(),
               ),
 
               const SizedBox(height: 24),
