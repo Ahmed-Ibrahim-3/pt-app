@@ -19,7 +19,6 @@ class _AuthGateState extends ConsumerState<AuthGate> {
   @override
   void initState() {
     super.initState();
-    // Pull once on app launch (if already signed in)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (_launched) return;
       _launched = true;
@@ -29,7 +28,6 @@ class _AuthGateState extends ConsumerState<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
-    // Pull on every UID change
     ref.listen(authStateProvider, (prev, next) {
       final prevUid = prev?.value?.uid;
       final curUid  = next.value?.uid;

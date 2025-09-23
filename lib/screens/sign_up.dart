@@ -58,10 +58,8 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
         final cred = await auth.createAccount(_email.text.trim(), _password.text);
         final uid = cred.user!.uid;
 
-        // Optional: set display name
         await cred.user!.updateDisplayName(_name.text.trim());
 
-        // Save profile to Firestore
         await profiles;
 
          final settings = UserSettings(
