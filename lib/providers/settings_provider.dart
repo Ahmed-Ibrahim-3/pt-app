@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user_settings.dart';
 import '../services/firestore_sync.dart';
+import 'auth_provider.dart';
 
 double kgFromLbs(double lbs) => lbs * 0.45359237;
 double lbsFromKg(double kg) => kg / 0.45359237;
@@ -28,12 +29,28 @@ final macroTargetsProvider = Provider<MacroTargets>((ref) {
 });
 
 class SettingsNotifier extends AsyncNotifier<UserSettings> {
-  static const _prefsKey = 'user_settings_v1';
+  static const _legacyPrefsKey = 'user_settings_v1'; 
+  late String _prefsKey;                            
 
   @override
   Future<UserSettings> build() async {
+    final uid = ref.watch(authStateProvider).value?.uid;
+
+    _prefsKey = 'user_settings_v1_${uid ?? 'anon'}';
+
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prefsKey);
+
+    String? raw = prefs.getString(_prefsKey);
+
+    if (raw == null && uid != null) {
+      final legacy = prefs.getString(_legacyPrefsKey);
+      if (legacy != null) {
+        await prefs.setString(_prefsKey, legacy);
+        await prefs.remove(_legacyPrefsKey);
+        raw = legacy;
+      }
+    }
+
     if (raw == null) return UserSettings.initial();
     try {
       return UserSettings.fromJsonString(raw);
@@ -61,7 +78,7 @@ class SettingsNotifier extends AsyncNotifier<UserSettings> {
     await _saveAndPublish(next);
   }
 
-  Future<void> _saveAndPublish(UserSettings next) async {
+   Future<void> _saveAndPublish(UserSettings next) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKey, next.toJsonString());
 

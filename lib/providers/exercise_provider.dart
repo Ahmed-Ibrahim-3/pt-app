@@ -4,20 +4,19 @@ import 'package:hive/hive.dart';
 import '../services/exercises_service.dart';
 import '../models/workout_plan.dart';
 import '../models/workout_plan_assignment.dart';
+import 'auth_provider.dart';
 
 class ExerciseHive {
   static const plansBox = 'exercise_plans';
   static const assignmentsBox = 'plan_assignments';
   static const sessionsBox = 'workout_sessions';
+
+  static String plansBoxFor(String? uid) => 'exercise_plans_${uid ?? 'anon'}';
+  static String assignmentsBoxFor(String? uid) => 'plan_assignments_${uid ?? 'anon'}';
+  static String sessionsBoxFor(String? uid) => 'workout_sessions_${uid ?? 'anon'}';
 }
 
 const apiNinjasKey = String.fromEnvironment('API_NINJAS_KEY');
-
-final _plansBoxProvider =
-    Provider<Box<ExercisePlan>>((_) => Hive.box<ExercisePlan>(ExerciseHive.plansBox));
-
-final _assignBoxProvider =
-    Provider<Box<PlanAssignment>>((_) => Hive.box<PlanAssignment>(ExerciseHive.assignmentsBox));
 
 final exerciseApiProvider =
     Provider<ExerciseApiService>((_) => ExerciseApiService(apiNinjasKey));
@@ -158,3 +157,22 @@ final assignmentRepoProvider =
 final weekAssignmentsProvider = StreamProvider.family<Map<DateTime, PlanAssignment>, DateTime>(
   (ref, anyLocal) => ref.watch(assignmentRepoProvider).watchWeek(anyLocal),
 );
+final _openExerciseBoxesProvider = FutureProvider<void>((ref) async {
+  final uid = ref.watch(authStateProvider).value?.uid;
+  final plansName  = ExerciseHive.plansBoxFor(uid);
+  final assignName = ExerciseHive.assignmentsBoxFor(uid);
+  if (!Hive.isBoxOpen(plansName))  { await Hive.openBox<ExercisePlan>(plansName); }
+  if (!Hive.isBoxOpen(assignName)) { await Hive.openBox<PlanAssignment>(assignName); }
+});
+
+final _plansBoxProvider = Provider<Box<ExercisePlan>>((ref) {
+  final uid = ref.watch(authStateProvider).value?.uid;
+  ref.watch(_openExerciseBoxesProvider);
+  return Hive.box<ExercisePlan>(ExerciseHive.plansBoxFor(uid));
+});
+
+final _assignBoxProvider = Provider<Box<PlanAssignment>>((ref) {
+  final uid = ref.watch(authStateProvider).value?.uid;
+  ref.watch(_openExerciseBoxesProvider);
+  return Hive.box<PlanAssignment>(ExerciseHive.assignmentsBoxFor(uid));
+});

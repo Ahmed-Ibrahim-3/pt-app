@@ -4,12 +4,18 @@ import '../models/meal_model.dart';
 class MealDatabaseService {
   static const _boxName = 'meals_box';
   Box<Meal>? _box;
+  String? _uid;
 
-  Future<void> init() async {
-  if (!Hive.isAdapterRegistered(1)) {
-    Hive.registerAdapter(MealAdapter());
-  }
-  _box ??= await Hive.openBox<Meal>(_boxName);
+  static String _boxNameFor(String? uid) => (uid == null || uid.isEmpty) ? 'meals_box_anon' : 'meals_box_$uid';
+
+  Future<void> init({String? uid}) async {
+  if (_uid != uid) {
+      await _box?.close();
+      _uid = uid;
+      _box = await Hive.openBox<Meal>(_boxNameFor(uid));
+    } else {
+      _box ??= await Hive.openBox<Meal>(_boxNameFor(uid));
+    }
   }
 
   Box<Meal> get _requireBox {
@@ -24,6 +30,13 @@ class MealDatabaseService {
     final box = _requireBox;
     await box.put(meal.id, meal);
   }
+
+   Future<void> close() async {
+    await _box?.close();
+    _box = null;
+    _uid = null;
+  }
+
 
   Future<void> deleteMeal(String id) async {
     final box = _requireBox;

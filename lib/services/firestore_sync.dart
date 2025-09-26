@@ -4,238 +4,297 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../providers/settings_provider.dart';
+import '../providers/auth_provider.dart';
 
 import '../models/user_settings.dart';
 import '../models/meal_model.dart';
+import '../providers/exercise_provider.dart';
 import '../models/workout_plan.dart';
 import '../models/workout_plan_assignment.dart';
 import '../models/workout_session.dart';
-import '../services/database_service.dart';
-import '../providers/exercise_provider.dart';
-import '../providers/auth_provider.dart';
-import '../providers/nutrition_provider.dart';
-import '../providers/settings_provider.dart';
 
-final firestoreProvider = Provider<FirebaseFirestore>((_) => FirebaseFirestore.instance);
-
-final firestoreSyncProvider = Provider<FirestoreSync>((ref) {
-  return FirestoreSync(
-    ref: ref,
-    firestore: ref.watch(firestoreProvider),
-    auth: ref.watch(firebaseAuthProvider),
-    mealDb: ref.read(mealDbProvider),
-  );
-});
+String _enumName(Object e) => e.toString().split('.').last;
+T _enumFromString<T>(List<T> values, String? name, T fallback) {
+  if (name == null) return fallback;
+  for (final v in values) {
+    if (_enumName(v as Object) == name) return v;
+  }
+  return fallback;
+}
 
 class FirestoreSync {
-  FirestoreSync({
-    required this.ref,
-    required this.firestore,
-    required this.auth,
-    required this.mealDb,
-  });
+  FirestoreSync(this.ref)
+      : _db = FirebaseFirestore.instance,
+        _auth = FirebaseAuth.instance;
 
   final Ref ref;
-  final FirebaseFirestore firestore;
-  final FirebaseAuth auth;
-  final MealDatabaseService mealDb;
+  final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
 
-  String? _uid;
-  bool _importing = false;
-  bool _uploadsEnabled = false;
+  bool _inRefresh = false;
+  StreamSubscription? _plansSub, _assignSub, _mealsSub, _sessionsSub;
 
-  StreamSubscription? _mealsWatch;
-  StreamSubscription? _plansWatch;
-  StreamSubscription? _assignWatch;
-  StreamSubscription? _sessionsWatch;
+  String? get _uid => _auth.currentUser?.uid;
 
-  DocumentReference<Map<String, dynamic>> _userDoc(String uid) =>
-      firestore.collection('users').doc(uid);
-  CollectionReference<Map<String, dynamic>> _meals(String uid) => _userDoc(uid).collection('meals');
-  CollectionReference<Map<String, dynamic>> _plans(String uid) => _userDoc(uid).collection('plans');
-  CollectionReference<Map<String, dynamic>> _assign(String uid) => _userDoc(uid).collection('assignments');
-  CollectionReference<Map<String, dynamic>> _sessions(String uid) => _userDoc(uid).collection('sessions');
+  DocumentReference<Map<String, dynamic>> get _userDoc =>
+      _db.collection('users').doc(_uid);
+  CollectionReference<Map<String, dynamic>> get _plansCol =>
+      _userDoc.collection('plans');
+  CollectionReference<Map<String, dynamic>> get _assignCol =>
+      _userDoc.collection('assignments');
+  CollectionReference<Map<String, dynamic>> get _mealsCol =>
+      _userDoc.collection('meals');
+  CollectionReference<Map<String, dynamic>> get _sessionsCol =>
+      _userDoc.collection('sessions');
 
-  Future<void> refreshFromCloud() async {
-    final u = auth.currentUser;
-    if (u == null) return;
+  String get _plansBoxName =>
+      ExerciseHive.plansBoxFor(_uid);          
+  String get _assignBoxName =>
+      ExerciseHive.assignmentsBoxFor(_uid);   
+  String get _sessionsBoxName =>
+      ExerciseHive.sessionsBoxFor(_uid);      
+  String get _mealsBoxName =>
+      'meals_box_${_uid ?? 'anon'}';          
 
-    _uploadsEnabled = false;
-    await _stopWatchers();
-
-    _importing = true;
-    try {
-      await _importCloudToLocal(u.uid);
-      _uid = u.uid; 
-    } finally {
-      _importing = false;
-    }
-
-    _uploadsEnabled = true;
-    await _startWatchers();
-
-    ref.invalidate(settingsProvider);
-    ref.invalidate(initMealsProvider);
-  }
-
-  Future<void> onLaunch() async {
-    final u = auth.currentUser;
-    if (u == null) return;
-    await _switchToUid(u.uid);
+  Future<Box<T>> _ensureOpen<T>(String name) async {
+    if (Hive.isBoxOpen(name)) return Hive.box<T>(name);
+    return Hive.openBox<T>(name);
   }
 
   Future<void> onAuthChange({String? previousUid, String? currentUid}) async {
-    await _switchToUid(currentUid);
+    await _cancelMirrors(); 
+  }
+
+  Future<void> startMirrors() async {
+    if (_uid == null) return;
+
+    final plansBox = await _ensureOpen<ExercisePlan>(_plansBoxName);
+    final assignBox = await _ensureOpen<PlanAssignment>(_assignBoxName);
+    final mealsBox = await _ensureOpen<Meal>(_mealsBoxName);
+    Box<WorkoutSession>? sessionsBox;
+    try { sessionsBox = await _ensureOpen<WorkoutSession>(_sessionsBoxName); } catch (_) {}
+
+    _plansSub?.cancel();
+    _assignSub?.cancel();
+    _mealsSub?.cancel();
+    _sessionsSub?.cancel();
+
+    _plansSub = plansBox.watch().listen((_) => pushPlansNow());
+    _assignSub = assignBox.watch().listen((_) => pushAssignmentsNow());
+    _mealsSub = mealsBox.watch().listen((_) => pushMealsNow());
+    if (sessionsBox != null) {
+      _sessionsSub = sessionsBox.watch().listen((_) => pushSessionsNow());
+    }
+
+    await pushAllNow();
+  }
+
+  Future<void> _cancelMirrors() async {
+    await _plansSub?.cancel();
+    await _assignSub?.cancel();
+    await _mealsSub?.cancel();
+    await _sessionsSub?.cancel();
+    _plansSub = _assignSub = _mealsSub = _sessionsSub = null;
   }
 
   Future<void> pushSettingsNow() async {
-    if (!_uploadsEnabled || _importing) return;
-    final u = auth.currentUser;
-    if (u == null || _uid != u.uid) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('user_settings_v1');
-    final settings = raw == null ? UserSettings.initial() : UserSettings.fromJsonString(raw);
-
-    await _userDoc(_uid!).set({
-      'settings': settings.toMap(),
+    if (_uid == null || _inRefresh) return;
+    final s = ref.read(settingsProvider).value ?? UserSettings.initial();
+    await _userDoc.set({
+      'settings': {
+        'name': s.name,
+        'gender': _enumName(s.gender),
+        'ageYears': s.ageYears,
+        'heightCm': s.heightCm,
+        'weightKg': s.weightKg,
+        'goal': _enumName(s.goal),
+        'units': _enumName(s.units),
+        'activity': _enumName(s.activity),
+        'defaultGym': s.defaultGym,
+      },
       'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
-  Future<void> _switchToUid(String? uid) async {
-    _uploadsEnabled = false;
-    await _stopWatchers();
+  Future<void> pushPlansNow() async {
+    if (_uid == null || _inRefresh) return;
+    final box = await _ensureOpen<ExercisePlan>(_plansBoxName);
 
-    _uid = uid;
+    final remote = await _plansCol.get();
+    final remoteIds = remote.docs.map((d) => d.id).toSet();
+    final localIds = <String>{};
 
+    final batch = _db.batch();
+    for (final key in box.keys) {
+      final id = key.toString();
+      localIds.add(id);
+      final p = box.get(key)!;
+      batch.set(_plansCol.doc(id), {
+        'planKey': key,
+        'name': p.name,
+        'exerciseIds': p.exerciseIds,
+        'createdAt': Timestamp.fromDate(p.createdAt),
+        'updatedAt': p.updatedAt == null ? null : Timestamp.fromDate(p.updatedAt!),
+      }, SetOptions(merge: true));
+    }
+    for (final rid in remoteIds.difference(localIds)) {
+      batch.delete(_plansCol.doc(rid));
+    }
+    await batch.commit();
+  }
+
+  Future<void> pushAssignmentsNow() async {
+    if (_uid == null || _inRefresh) return;
+    final box = await _ensureOpen<PlanAssignment>(_assignBoxName);
+
+    final remote = await _assignCol.get();
+    final remoteIds = remote.docs.map((d) => d.id).toSet();
+    final localIds = <String>{};
+
+    final batch = _db.batch();
+    for (final key in box.keys) {
+      final id = key.toString();
+      localIds.add(id);
+      final a = box.get(key)!;
+      batch.set(_assignCol.doc(id), {
+        'date': Timestamp.fromDate(a.date),
+        'planKey': a.planKey,
+        'completed': a.completed,
+        'location': a.location,
+      }, SetOptions(merge: true));
+    }
+    for (final rid in remoteIds.difference(localIds)) {
+      batch.delete(_assignCol.doc(rid));
+    }
+    await batch.commit();
+  }
+
+  Future<void> pushMealsNow() async {
+    if (_uid == null || _inRefresh) return;
+    final box = await _ensureOpen<Meal>(_mealsBoxName);
+
+    final remote = await _mealsCol.get();
+    final remoteIds = remote.docs.map((d) => d.id).toSet();
+    final localIds = <String>{};
+
+    final batch = _db.batch();
+    for (final key in box.keys) {
+      final id = key.toString(); 
+      localIds.add(id);
+      final m = box.get(key)!;
+      batch.set(_mealsCol.doc(id), {
+        'id': m.id,
+        'name': m.name,
+        'calories': m.calories,
+        'protein': m.protein,
+        'carbs': m.carbs,
+        'fat': m.fat,
+        'loggedAt': Timestamp.fromDate(m.loggedAt),
+        'notes': m.notes,
+      }, SetOptions(merge: true));
+    }
+    for (final rid in remoteIds.difference(localIds)) {
+      batch.delete(_mealsCol.doc(rid));
+    }
+    await batch.commit();
+  }
+
+  Future<void> pushSessionsNow() async {
+    if (_uid == null || _inRefresh) return;
+  }
+
+  Future<void> pushAllNow() async {
+    await Future.wait([
+      pushPlansNow(),
+      pushAssignmentsNow(),
+      pushMealsNow(),
+    ]);
+  }
+
+  Future<void> refreshFromCloud() async {
     if (_uid == null) return;
-
-    _importing = true;
+    _inRefresh = true;
     try {
-      await _importCloudToLocal(_uid!);
+      final snap = await _userDoc.get();
+      if (snap.exists) {
+        final s = (snap.data()?['settings'] as Map<String, dynamic>?) ?? {};
+        final settings = UserSettings(
+          name: s['name'] as String? ?? '',
+          gender: _enumFromString(Gender.values, s['gender'] as String?, Gender.male),
+          ageYears: (s['ageYears'] as num?)?.toInt() ?? 30,
+          heightCm: (s['heightCm'] as num?)?.toDouble() ?? 175.0,
+          weightKg: (s['weightKg'] as num?)?.toDouble() ?? 75.0,
+          goal: _enumFromString(Goal.values, s['goal'] as String?, Goal.maintain),
+          units: _enumFromString(Units.values, s['units'] as String?, Units.metric),
+          activity: _enumFromString(ActivityLevel.values, s['activity'] as String?, ActivityLevel.moderate),
+          experience: _enumFromString(ExperienceLevel.values, s['experience'] as String?, ExperienceLevel.beginner),
+          defaultGym: s['defaultGym'] as String? ?? '',
+        );
+        await ref.read(settingsProvider.notifier).save(settings);
+      } else {
+        await pushSettingsNow();
+      }
+
+      final plansBox = await _ensureOpen<ExercisePlan>(_plansBoxName);
+      final assignBox = await _ensureOpen<PlanAssignment>(_assignBoxName);
+      final mealsBox = await _ensureOpen<Meal>(_mealsBoxName);
+
+      await plansBox.clear();
+      final plans = await _plansCol.get();
+      for (final d in plans.docs) {
+        final data = d.data();
+        final plan = ExercisePlan(
+          name: data['name'] as String? ?? '',
+          exerciseIds: (data['exerciseIds'] as List?)?.cast<String>() ?? <String>[],
+          createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+        );
+        final keyStr = d.id;
+        final key = int.tryParse(keyStr);
+        if (key != null) {
+          await plansBox.put(key, plan);
+        } else {
+          await plansBox.put(keyStr, plan);
+        }
+      }
+
+      await assignBox.clear();
+      final assigns = await _assignCol.get();
+      for (final d in assigns.docs) {
+        final data = d.data();
+        final a = PlanAssignment(
+          date: (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          planKey: (data['planKey'] as num?)?.toInt() ?? 0,
+          completed: data['completed'] as bool? ?? false,
+          location: data['location'] as String?,
+        );
+        await assignBox.put(d.id, a); 
+      }
+
+      await mealsBox.clear();
+      final meals = await _mealsCol.get();
+      for (final d in meals.docs) {
+        final data = d.data();
+        final m = Meal(
+          id: data['id'] as String,
+          name: data['name'] as String? ?? '',
+          calories: (data['calories'] as num?)?.toDouble() ?? 0,
+          protein: (data['protein'] as num?)?.toDouble() ?? 0,
+          carbs: (data['carbs'] as num?)?.toDouble() ?? 0,
+          fat: (data['fat'] as num?)?.toDouble() ?? 0,
+          loggedAt: (data['loggedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+          notes: data['notes'] as String?,
+        );
+        await mealsBox.put(m.id, m);
+      }
     } finally {
-      _importing = false;
+      _inRefresh = false;
+      await startMirrors(); 
     }
-
-    _uploadsEnabled = true;
-    await _startWatchers();
-
-    ref.invalidate(settingsProvider);
-    ref.invalidate(initMealsProvider);
-  }
-
-  Future<void> _importCloudToLocal(String uid) async {
-    final ud = await _userDoc(uid).get();
-    final m = ud.data();
-    final settings = UserSettings.fromMap(m?['settings'] as Map<String, dynamic>?);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_settings_v1', settings.toJsonString());
-
-    await mealDb.init();
-    final mealsSnap = await _meals(uid).get();
-    final meals = mealsSnap.docs.map((d) => d.data()).toList();
-    await mealDb.replaceAll(meals);
-
-    final plansBox = Hive.box<ExercisePlan>(ExerciseHive.plansBox);
-    final assignBox = Hive.box<PlanAssignment>(ExerciseHive.assignmentsBox);
-    final sessionsBox = Hive.box<WorkoutSession>(ExerciseHive.sessionsBox);
-
-    await plansBox.clear();
-    await assignBox.clear();
-    await sessionsBox.clear();
-
-    final plans = await _plans(uid).get();
-    for (final d in plans.docs) {
-      final key = int.tryParse(d.id) ?? (d.data()['key'] as int? ?? d.hashCode);
-      await plansBox.put(key, ExercisePlan.fromMap(d.data()));
-    }
-
-    final assigns = await _assign(uid).get();
-    for (final d in assigns.docs) {
-      final key = int.tryParse(d.id) ?? (d.data()['key'] as int? ?? d.hashCode);
-      await assignBox.put(key, PlanAssignment.fromMap(d.data()));
-    }
-
-    final sessions = await _sessions(uid).get();
-    for (final d in sessions.docs) {
-      final key = int.tryParse(d.id) ?? (d.data()['key'] as int? ?? d.hashCode);
-      await sessionsBox.put(key, WorkoutSession.fromMap(d.data()));
-    }
-  }
-
-  Future<void> _startWatchers() async {
-    if (_uid == null) return;
-
-    _mealsWatch = Hive.box<Meal>('meals_box').watch().listen((e) async {
-      if (!_uploadsEnabled || _importing || _uid == null) return;
-      final boxUid = _uid!;
-      final id = e.key as String;
-      if (e.deleted) {
-        await _meals(boxUid).doc(id).delete();
-      } else {
-        final meal = e.value as Meal;
-        await _meals(boxUid).doc(id).set({
-          ...meal.toMap(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-    });
-
-    _plansWatch = Hive.box<ExercisePlan>(ExerciseHive.plansBox).watch().listen((e) async {
-      if (!_uploadsEnabled || _importing || _uid == null) return;
-      final boxUid = _uid!;
-      final key = e.key.toString();
-      if (e.deleted) {
-        await _plans(boxUid).doc(key).delete();
-      } else {
-        final plan = e.value as ExercisePlan;
-        await _plans(boxUid).doc(key).set({
-          'key': e.key,
-          ...plan.toMap(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-    });
-
-    _assignWatch = Hive.box<PlanAssignment>(ExerciseHive.assignmentsBox).watch().listen((e) async {
-      if (!_uploadsEnabled || _importing || _uid == null) return;
-      final boxUid = _uid!;
-      final key = e.key.toString();
-      if (e.deleted) {
-        await _assign(boxUid).doc(key).delete();
-      } else {
-        final assign = e.value as PlanAssignment;
-        await _assign(boxUid).doc(key).set({
-          'key': e.key,
-          ...assign.toMap(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-    });
-
-    _sessionsWatch = Hive.box<WorkoutSession>(ExerciseHive.sessionsBox).watch().listen((e) async {
-      if (!_uploadsEnabled || _importing || _uid == null) return;
-      final boxUid = _uid!;
-      final key = e.key.toString();
-      if (e.deleted) {
-        await _sessions(boxUid).doc(key).delete();
-      } else {
-        final session = e.value as WorkoutSession;
-        await _sessions(boxUid).doc(key).set({
-          'key': e.key,
-          ...session.toMap(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-    });
-  }
-
-  Future<void> _stopWatchers() async {
-    await _mealsWatch?.cancel(); _mealsWatch = null;
-    await _plansWatch?.cancel(); _plansWatch = null;
-    await _assignWatch?.cancel(); _assignWatch = null;
-    await _sessionsWatch?.cancel(); _sessionsWatch = null;
   }
 }
+
+final firestoreSyncProvider = Provider<FirestoreSync>((ref) => FirestoreSync(ref));

@@ -2,11 +2,20 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive/hive.dart';
+
 import 'providers/auth_provider.dart';
+
+import 'providers/settings_provider.dart';
+import 'providers/profile_provider.dart';
+import 'providers/nutrition_provider.dart';
+import 'providers/exercise_provider.dart';
+import 'providers/workout_provider.dart';
+
 import 'services/firestore_sync.dart';
+
 import 'home_page.dart';
 import 'screens/sign_in_screen.dart';
-
 class AuthGate extends ConsumerStatefulWidget {
   const AuthGate({super.key});
   @override
@@ -14,31 +23,77 @@ class AuthGate extends ConsumerStatefulWidget {
 }
 
 class _AuthGateState extends ConsumerState<AuthGate> {
-  bool _launched = false;
+  String? _lastUid;
+  bool _wired = false;
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (_launched) return;
-      _launched = true;
-      await ref.read(firestoreSyncProvider).onLaunch();
+  Future<void> _onAuthChanged(String? previousUid, String? currentUid) async {
+    try { ref.invalidate(settingsProvider); ref.invalidate(userSettingsProvider); } catch (_) {}
+    try {
+      ref.invalidate(initMealsProvider);
+      ref.invalidate(readyMealDbProvider);
+      ref.invalidate(mealControllerProvider);
+      ref.invalidate(mealsForTodayProvider);
+    } catch (_) {}
+    try {
+      ref.invalidate(planRepoProvider);
+      ref.invalidate(plansStreamProvider);
+      ref.invalidate(assignmentRepoProvider);
+      ref.invalidate(weekAssignmentsProvider);
+      ref.invalidate(workoutSessionRepoProvider);
+      ref.invalidate(workoutSessionForDayProvider);
+    } catch (_) {}
+    try { ref.invalidate(firestoreSyncProvider); } catch (_) {}
+
+    ref.listen(authStateProvider, (prev, curr) {
+      final prevUid = prev?.value?.uid;
+      final curUid  = curr.value?.uid;
+      if (prevUid != curUid) {
+        ref.invalidate(settingsProvider);
+        ref.invalidate(userSettingsProvider);
+
+        unawaited(ref.read(firestoreSyncProvider).onAuthChange(
+          previousUid: prevUid,
+          currentUid: curUid,
+        ));
+        if (curUid != null) {
+          unawaited(ref.read(firestoreSyncProvider).refreshFromCloud());
+        }
+      }
     });
+
+    try {
+      await ref.read(firestoreSyncProvider).onAuthChange(
+        previousUid: previousUid,
+        currentUid: currentUid,
+      );
+      if (currentUid != null) {
+        await ref.read(firestoreSyncProvider).refreshFromCloud();
+      }
+    } catch (_) {}
   }
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(authStateProvider, (prev, next) {
+  if (!_wired) {
+    _wired = true;
+    ref.listen(authStateProvider, (prev, curr) {
       final prevUid = prev?.value?.uid;
-      final curUid  = next.value?.uid;
-      if (prevUid == curUid) return;
-      scheduleMicrotask(() {
-        ref.read(firestoreSyncProvider).onAuthChange(
-          previousUid: prevUid,
-          currentUid: curUid,
-        );
-      });
-    });
+      final curUid  = curr.value?.uid;
+      if (prevUid != curUid) {
+        final sync = ref.read(firestoreSyncProvider);
+
+        sync.onAuthChange(previousUid: prevUid, currentUid: curUid);
+
+        ref.invalidate(settingsProvider);
+
+        unawaited(() async {
+          await sync.refreshFromCloud();
+          await sync.startMirrors(); 
+        }());
+  }
+});
+
+  }
 
     final authAsync = ref.watch(authStateProvider);
     return authAsync.when(

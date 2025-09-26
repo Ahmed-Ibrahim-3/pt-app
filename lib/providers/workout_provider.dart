@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import '../models/workout_session.dart';
 import 'exercise_provider.dart';
+import 'auth_provider.dart';
 
-final _sessionsBoxProvider =
-    Provider<Box<WorkoutSession>>((_) => Hive.box<WorkoutSession>(ExerciseHive.sessionsBox));
+// final _sessionsBoxProvider =
+//     Provider<Box<WorkoutSession>>((_) => Hive.box<WorkoutSession>(ExerciseHive.sessionsBox));
 
 String _dateKey(DateTime local) {
   final d = DateTime(local.year, local.month, local.day);
@@ -67,4 +68,16 @@ final workoutSessionRepoProvider =
 final workoutSessionForDayProvider =
     StreamProvider.family<WorkoutSession?, DateTime>((ref, day) {
   return ref.watch(workoutSessionRepoProvider).watchForDay(day);
+});
+
+final _openSessionsBoxProvider = FutureProvider<void>((ref) async {
+  final uid = ref.watch(authStateProvider).value?.uid;
+  final name = ExerciseHive.sessionsBoxFor(uid);
+  if (!Hive.isBoxOpen(name)) { await Hive.openBox<WorkoutSession>(name); }
+});
+
+final _sessionsBoxProvider = Provider<Box<WorkoutSession>>((ref) {
+  final uid = ref.watch(authStateProvider).value?.uid;
+  ref.watch(_openSessionsBoxProvider); 
+  return Hive.box<WorkoutSession>(ExerciseHive.sessionsBoxFor(uid));
 });

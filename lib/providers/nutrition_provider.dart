@@ -4,17 +4,22 @@ import '/models/saved_meal.dart';
 import '/services/saved_meals_service.dart';
 import '/services/database_service.dart';
 import '/services/nutrition_service.dart';
+import '/services/firestore_sync.dart';
+import 'auth_provider.dart';
 
 final mealDbProvider = Provider<MealDatabaseService>((ref) => MealDatabaseService());
 
 final initMealsProvider = FutureProvider<void>((ref) async {
   final db = ref.read(mealDbProvider);
-  await db.init();
+  final user = ref.watch(authStateProvider).value;
+  await db.init(uid: user?.uid);
 });
 
 final readyMealDbProvider = FutureProvider<MealDatabaseService>((ref) async {
   final db = ref.read(mealDbProvider);
-  await db.init();
+  final user = ref.watch(authStateProvider).value;
+  await db.init(uid: user?.uid);
+  ref.onDispose(() => db.close());
   return db;
 });
 
@@ -29,7 +34,9 @@ class MealController extends AsyncNotifier<void> {
     } catch (e, st) {
       state = AsyncError(e, st);
     }
+    await ref.read(firestoreSyncProvider).pushMealsNow();
   }
+
   Future<void> deleteMeal(String id) async {
     state = const AsyncLoading();
     try {
@@ -38,6 +45,7 @@ class MealController extends AsyncNotifier<void> {
     } catch (e, st) {
       state = AsyncError(e, st);
     }
+    await ref.read(firestoreSyncProvider).pushMealsNow();
   }
 }
 final mealControllerProvider =
