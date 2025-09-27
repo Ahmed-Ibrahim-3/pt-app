@@ -5,9 +5,6 @@ import '../models/workout_session.dart';
 import 'exercise_provider.dart';
 import 'auth_provider.dart';
 
-// final _sessionsBoxProvider =
-//     Provider<Box<WorkoutSession>>((_) => Hive.box<WorkoutSession>(ExerciseHive.sessionsBox));
-
 String _dateKey(DateTime local) {
   final d = DateTime(local.year, local.month, local.day);
   final mm = d.month.toString().padLeft(2, '0');

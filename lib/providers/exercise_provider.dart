@@ -140,6 +140,26 @@ class AssignmentRepo {
     }
   }
 
+  Future<void> upsertPlanForDay(DateTime dayLocal, dynamic planKey) async {
+    final key = _dateKey(dayLocal);
+    final existing = box.get(key);
+    if (existing == null) {
+      await box.put(
+        key,
+        PlanAssignment(
+          date: DateTime(dayLocal.year, dayLocal.month, dayLocal.day),
+          planKey: planKey,
+          completed: false,
+        ),
+      );
+    } else {
+      existing.planKey = planKey;
+      existing.completed = false;
+      await existing.save();
+    }
+  }
+
+
   Future<void> setLocation(DateTime day, String? location) async {
     final d = DateTime(day.year, day.month, day.day); 
     final a = box.get(_dateKey(d)); 
