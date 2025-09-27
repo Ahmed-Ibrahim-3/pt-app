@@ -77,10 +77,6 @@ final foodDetailsProvider =
   return ref.read(nutritionServiceProvider).getFoodDetails(foodId);
 });
 
-
-final savedMealsDbProvider =
-    Provider<SavedMealsDatabaseService>((ref) => SavedMealsDatabaseService());
-
 final readySavedMealsDbProvider =
     FutureProvider<SavedMealsDatabaseService>((ref) async {
   final db = ref.read(savedMealsDbProvider);
@@ -123,3 +119,44 @@ class SavedMealController extends AsyncNotifier<void> {
 
 final savedMealControllerProvider =
     AsyncNotifierProvider<SavedMealController, void>(() => SavedMealController());
+
+final savedMealsDbProvider = Provider<SavedMealsDatabaseService>((ref) => SavedMealsDatabaseService());
+
+final initSavedMealsProvider = FutureProvider<void>((ref) async {
+  final db = ref.read(savedMealsDbProvider);
+  await db.init();
+});
+
+final savedMealsStreamProvider = StreamProvider<List<SavedMeal>>((ref) async* {
+  await ref.watch(initSavedMealsProvider.future);
+  yield* ref.read(savedMealsDbProvider).watchAll();
+});
+
+final savedMealsListProvider = Provider<List<SavedMeal>>((ref) {
+  final async = ref.watch(savedMealsStreamProvider);
+  return async.value ?? const <SavedMeal>[];
+});
+
+final savedMealsActionsProvider = Provider((ref) {
+  final savedDb = ref.read(savedMealsDbProvider);
+  final mealDb = ref.read(mealDbProvider);
+  return _SavedMealsActions(savedDb: savedDb, mealDb: mealDb, ref: ref);
+});
+
+class _SavedMealsActions {
+  final SavedMealsDatabaseService savedDb;
+  final MealDatabaseService mealDb;
+  final Ref ref;
+  _SavedMealsActions({required this.savedDb, required this.mealDb, required this.ref});
+
+  Future<void> saveMealTemplate(Meal meal, {String? nameOverride}) async {
+    final s = SavedMeal.fromMeal(meal, overrideName: nameOverride);
+    await savedDb.upsert(s);
+  }
+
+  Future<void> quickLog(SavedMeal s, DateTime when) async {
+    await mealDb.upsertMeal(s.toMeal(when));
+  }
+
+  Future<void> delete(String id) => savedDb.delete(id);
+}

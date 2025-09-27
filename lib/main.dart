@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:pt/firebase_options.dart';
+import 'package:pt/models/saved_meal.dart';
 
 import 'auth_gate.dart';
 import 'models/meal_model.dart';
@@ -24,11 +25,13 @@ Future<void> _initHive() async {
   Hive.registerAdapter(WorkoutSessionAdapter());      
   Hive.registerAdapter(WorkoutEntryAdapter());      
   Hive.registerAdapter(SetEntryAdapter());          
+  Hive.registerAdapter(SavedMealAdapter());
 
   await Hive.openBox<Meal>('meals_box');
   await Hive.openBox<ExercisePlan>(ExerciseHive.plansBox);
   await Hive.openBox<PlanAssignment>(ExerciseHive.assignmentsBox);
   await Hive.openBox<WorkoutSession>(ExerciseHive.sessionsBox);
+  await Hive.openBox<SavedMeal>('saved_meals');
 }
 
 void main() async {

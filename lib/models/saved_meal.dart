@@ -1,5 +1,5 @@
 import 'package:hive/hive.dart';
-import '/models/meal_model.dart';
+import 'meal_model.dart';
 
 part 'saved_meal.g.dart';
 
@@ -36,6 +36,18 @@ class SavedMeal extends HiveObject {
     this.notes,
   });
 
+  factory SavedMeal.fromMeal(Meal m, {String? forceId, String? overrideName}) {
+    return SavedMeal(
+      id: forceId ?? m.id,
+      name: overrideName?.trim().isNotEmpty == true ? overrideName!.trim() : m.name,
+      calories: m.calories,
+      protein: m.protein,
+      carbs: m.carbs,
+      fat: m.fat,
+      notes: m.notes,
+    );
+  }
+
   Meal toMeal(DateTime loggedAt) => Meal(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         name: name,
@@ -45,5 +57,25 @@ class SavedMeal extends HiveObject {
         fat: fat,
         loggedAt: loggedAt,
         notes: notes,
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'name': name,
+        'calories': calories,
+        'protein': protein,
+        'carbs': carbs,
+        'fat': fat,
+        'notes': notes,
+      };
+
+  static SavedMeal fromMap(Map<String, dynamic> m) => SavedMeal(
+        id: '${m['id']}',
+        name: '${m['name']}',
+        calories: (m['calories'] as num).toDouble(),
+        protein: (m['protein'] as num).toDouble(),
+        carbs: (m['carbs'] as num).toDouble(),
+        fat: (m['fat'] as num).toDouble(),
+        notes: m['notes'] as String?,
       );
 }

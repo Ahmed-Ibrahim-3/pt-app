@@ -2,7 +2,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive/hive.dart';
 
 import 'providers/auth_provider.dart';
 
@@ -16,6 +15,7 @@ import 'services/firestore_sync.dart';
 
 import 'home_page.dart';
 import 'screens/sign_in_screen.dart';
+
 class AuthGate extends ConsumerStatefulWidget {
   const AuthGate({super.key});
   @override
@@ -23,77 +23,46 @@ class AuthGate extends ConsumerStatefulWidget {
 }
 
 class _AuthGateState extends ConsumerState<AuthGate> {
-  String? _lastUid;
   bool _wired = false;
-
-  Future<void> _onAuthChanged(String? previousUid, String? currentUid) async {
-    try { ref.invalidate(settingsProvider); ref.invalidate(userSettingsProvider); } catch (_) {}
-    try {
-      ref.invalidate(initMealsProvider);
-      ref.invalidate(readyMealDbProvider);
-      ref.invalidate(mealControllerProvider);
-      ref.invalidate(mealsForTodayProvider);
-    } catch (_) {}
-    try {
-      ref.invalidate(planRepoProvider);
-      ref.invalidate(plansStreamProvider);
-      ref.invalidate(assignmentRepoProvider);
-      ref.invalidate(weekAssignmentsProvider);
-      ref.invalidate(workoutSessionRepoProvider);
-      ref.invalidate(workoutSessionForDayProvider);
-    } catch (_) {}
-    try { ref.invalidate(firestoreSyncProvider); } catch (_) {}
-
-    ref.listen(authStateProvider, (prev, curr) {
-      final prevUid = prev?.value?.uid;
-      final curUid  = curr.value?.uid;
-      if (prevUid != curUid) {
-        ref.invalidate(settingsProvider);
-        ref.invalidate(userSettingsProvider);
-
-        unawaited(ref.read(firestoreSyncProvider).onAuthChange(
-          previousUid: prevUid,
-          currentUid: curUid,
-        ));
-        if (curUid != null) {
-          unawaited(ref.read(firestoreSyncProvider).refreshFromCloud());
-        }
-      }
-    });
-
-    try {
-      await ref.read(firestoreSyncProvider).onAuthChange(
-        previousUid: previousUid,
-        currentUid: currentUid,
-      );
-      if (currentUid != null) {
-        await ref.read(firestoreSyncProvider).refreshFromCloud();
-      }
-    } catch (_) {}
-  }
 
   @override
   Widget build(BuildContext context) {
-  if (!_wired) {
-    _wired = true;
-    ref.listen(authStateProvider, (prev, curr) {
-      final prevUid = prev?.value?.uid;
-      final curUid  = curr.value?.uid;
-      if (prevUid != curUid) {
+    if (!_wired) {
+      _wired = true;
+
+      ref.listen(authStateProvider, (prev, curr) async {
+        final prevUid = prev?.value?.uid;
+        final curUid  = curr.value?.uid;
+
+        try { ref.invalidate(settingsProvider); ref.invalidate(userSettingsProvider); } catch (_) {}
+        try {
+          ref.invalidate(initMealsProvider);
+          ref.invalidate(readyMealDbProvider);
+          ref.invalidate(mealControllerProvider);
+          ref.invalidate(mealsForTodayProvider);
+          ref.invalidate(initSavedMealsProvider);
+        } catch (_) {}
+        try {
+          ref.invalidate(planRepoProvider);
+          ref.invalidate(plansStreamProvider);
+          ref.invalidate(assignmentRepoProvider);
+          ref.invalidate(weekAssignmentsProvider);
+          ref.invalidate(workoutSessionRepoProvider);
+          ref.invalidate(workoutSessionForDayProvider);
+        } catch (_) {}
+        try { ref.invalidate(firestoreSyncProvider); } catch (_) {}
+
         final sync = ref.read(firestoreSyncProvider);
 
-        sync.onAuthChange(previousUid: prevUid, currentUid: curUid);
+        await sync.onAuthChange(previousUid: prevUid, currentUid: curUid);
 
-        ref.invalidate(settingsProvider);
+        if (curUid != null) {
+          try { await ref.read(initSavedMealsProvider.future); } catch (_) {}
 
-        unawaited(() async {
           await sync.refreshFromCloud();
-          await sync.startMirrors(); 
-        }());
-  }
-});
-
-  }
+        }
+      });
+    }
 
     final authAsync = ref.watch(authStateProvider);
     return authAsync.when(

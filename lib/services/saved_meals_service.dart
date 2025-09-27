@@ -1,5 +1,5 @@
 import 'package:hive/hive.dart';
-import '/models/saved_meal.dart';
+import '../models/saved_meal.dart';
 
 class SavedMealsDatabaseService {
   static const _boxName = 'saved_meals_box';
@@ -17,10 +17,9 @@ class SavedMealsDatabaseService {
     return b;
   }
 
-  Future<void> upsert(SavedMeal m) async {
-    final box = _requireBox;
-    await box.put(m.id, m);
-  }
+  Future<SavedMeal?> getById(String id) async => _requireBox.get(id);
+
+  Future<void> upsert(SavedMeal m) async => _requireBox.put(m.id, m);
 
   Future<void> delete(String id) async => _requireBox.delete(id);
 

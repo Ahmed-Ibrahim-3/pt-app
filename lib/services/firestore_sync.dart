@@ -7,13 +7,16 @@ import 'package:hive/hive.dart';
 
 import '../providers/settings_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/exercise_provider.dart';
 
 import '../models/user_settings.dart';
 import '../models/meal_model.dart';
-import '../providers/exercise_provider.dart';
+import '../models/saved_meal.dart';
 import '../models/workout_plan.dart';
 import '../models/workout_plan_assignment.dart';
 import '../models/workout_session.dart';
+
+import '../services/saved_meals_service.dart';
 
 String _enumName(Object e) => e.toString().split('.').last;
 T _enumFromString<T>(List<T> values, String? name, T fallback) {
@@ -34,7 +37,14 @@ class FirestoreSync {
   final FirebaseAuth _auth;
 
   bool _inRefresh = false;
-  StreamSubscription? _plansSub, _assignSub, _mealsSub, _sessionsSub;
+
+  StreamSubscription? _plansSub;
+  StreamSubscription? _assignSub;
+  StreamSubscription? _mealsSub;
+  StreamSubscription? _sessionsSub;
+
+  StreamSubscription<List<SavedMeal>>? _savedMealsLocalSub;
+  StreamSubscription? _savedMealsRemoteSub;
 
   String? get _uid => _auth.currentUser?.uid;
 
@@ -48,15 +58,14 @@ class FirestoreSync {
       _userDoc.collection('meals');
   CollectionReference<Map<String, dynamic>> get _sessionsCol =>
       _userDoc.collection('sessions');
+  CollectionReference<Map<String, dynamic>> get _savedMealsCol =>
+      _userDoc.collection('savedMeals');
 
-  String get _plansBoxName =>
-      ExerciseHive.plansBoxFor(_uid);          
-  String get _assignBoxName =>
-      ExerciseHive.assignmentsBoxFor(_uid);   
-  String get _sessionsBoxName =>
-      ExerciseHive.sessionsBoxFor(_uid);      
-  String get _mealsBoxName =>
-      'meals_box_${_uid ?? 'anon'}';          
+  String get _plansBoxName => ExerciseHive.plansBoxFor(_uid);
+  String get _assignBoxName => ExerciseHive.assignmentsBoxFor(_uid); 
+  String get _sessionsBoxName => ExerciseHive.sessionsBoxFor(_uid); 
+  String get _mealsBoxName => 'meals_box_${_uid ?? 'anon'}';
+  final _savedMealsDb = SavedMealsDatabaseService();
 
   Future<Box<T>> _ensureOpen<T>(String name) async {
     if (Hive.isBoxOpen(name)) return Hive.box<T>(name);
@@ -64,22 +73,27 @@ class FirestoreSync {
   }
 
   Future<void> onAuthChange({String? previousUid, String? currentUid}) async {
-    await _cancelMirrors(); 
+    await _cancelMirrors();
+
+    await _savedMealsDb.init();
   }
 
   Future<void> startMirrors() async {
     if (_uid == null) return;
 
+    await _savedMealsDb.init();
+
     final plansBox = await _ensureOpen<ExercisePlan>(_plansBoxName);
     final assignBox = await _ensureOpen<PlanAssignment>(_assignBoxName);
     final mealsBox = await _ensureOpen<Meal>(_mealsBoxName);
     Box<WorkoutSession>? sessionsBox;
-    try { sessionsBox = await _ensureOpen<WorkoutSession>(_sessionsBoxName); } catch (_) {}
+    try {
+      sessionsBox = await _ensureOpen<WorkoutSession>(_sessionsBoxName);
+    } catch (_) {
+      sessionsBox = null;
+    }
 
-    _plansSub?.cancel();
-    _assignSub?.cancel();
-    _mealsSub?.cancel();
-    _sessionsSub?.cancel();
+    await _cancelMirrors();
 
     _plansSub = plansBox.watch().listen((_) => pushPlansNow());
     _assignSub = assignBox.watch().listen((_) => pushAssignmentsNow());
@@ -87,6 +101,31 @@ class FirestoreSync {
     if (sessionsBox != null) {
       _sessionsSub = sessionsBox.watch().listen((_) => pushSessionsNow());
     }
+
+    _savedMealsLocalSub = _savedMealsDb.watchAll().listen((list) async {
+      if (_inRefresh) return;
+      final batch = _db.batch();
+      final remote = await _savedMealsCol.get();
+      final remoteIds = remote.docs.map((d) => d.id).toSet();
+      final localIds = list.map((e) => e.id).toSet();
+
+      for (final s in list) {
+        batch.set(_savedMealsCol.doc(s.id), s.toMap(), SetOptions(merge: true));
+      }
+      for (final rid in remoteIds.difference(localIds)) {
+        batch.delete(_savedMealsCol.doc(rid));
+      }
+      await batch.commit();
+    });
+
+    _savedMealsRemoteSub = _savedMealsCol.snapshots().listen((snap) async {
+      if (_inRefresh) return;
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final s = SavedMeal.fromMap({...data, 'id': doc.id});
+        await _savedMealsDb.upsert(s);
+      }
+    });
 
     await pushAllNow();
   }
@@ -96,7 +135,15 @@ class FirestoreSync {
     await _assignSub?.cancel();
     await _mealsSub?.cancel();
     await _sessionsSub?.cancel();
-    _plansSub = _assignSub = _mealsSub = _sessionsSub = null;
+    await _savedMealsLocalSub?.cancel();
+    await _savedMealsRemoteSub?.cancel();
+
+    _plansSub = null;
+    _assignSub = null;
+    _mealsSub = null;
+    _sessionsSub = null;
+    _savedMealsLocalSub = null;
+    _savedMealsRemoteSub = null;
   }
 
   Future<void> pushSettingsNow() async {
@@ -182,7 +229,7 @@ class FirestoreSync {
 
     final batch = _db.batch();
     for (final key in box.keys) {
-      final id = key.toString(); 
+      final id = key.toString();
       localIds.add(id);
       final m = box.get(key)!;
       batch.set(_mealsCol.doc(id), {
@@ -207,6 +254,14 @@ class FirestoreSync {
   }
 
   Future<void> pushAllNow() async {
+    if (_uid == null) return;
+
+    await pushSettingsNow();
+
+    for (final s in _savedMealsDb.getAll()) {
+      await _savedMealsCol.doc(s.id).set(s.toMap(), SetOptions(merge: true));
+    }
+
     await Future.wait([
       pushPlansNow(),
       pushAssignmentsNow(),
@@ -216,6 +271,7 @@ class FirestoreSync {
 
   Future<void> refreshFromCloud() async {
     if (_uid == null) return;
+
     _inRefresh = true;
     try {
       final snap = await _userDoc.get();
@@ -230,7 +286,7 @@ class FirestoreSync {
           goal: _enumFromString(Goal.values, s['goal'] as String?, Goal.maintain),
           units: _enumFromString(Units.values, s['units'] as String?, Units.metric),
           activity: _enumFromString(ActivityLevel.values, s['activity'] as String?, ActivityLevel.moderate),
-          experience: _enumFromString(ExperienceLevel.values, s['experience'] as String?, ExperienceLevel.beginner),
+          experience: _enumFromString(ExperienceLevel.values, s['experience'] as String?,ExperienceLevel.beginner),
           defaultGym: s['defaultGym'] as String? ?? '',
         );
         await ref.read(settingsProvider.notifier).save(settings);
@@ -271,7 +327,7 @@ class FirestoreSync {
           completed: data['completed'] as bool? ?? false,
           location: data['location'] as String?,
         );
-        await assignBox.put(d.id, a); 
+        await assignBox.put(d.id, a);
       }
 
       await mealsBox.clear();
@@ -290,9 +346,16 @@ class FirestoreSync {
         );
         await mealsBox.put(m.id, m);
       }
+
+      await _savedMealsDb.init();
+      final savedSnap = await _savedMealsCol.get();
+      for (final d in savedSnap.docs) {
+        final s = SavedMeal.fromMap({...d.data(), 'id': d.id});
+        await _savedMealsDb.upsert(s);
+      }
     } finally {
       _inRefresh = false;
-      await startMirrors(); 
+      await startMirrors();
     }
   }
 }

@@ -12,6 +12,8 @@ import '/models/saved_meal.dart';
 import '/providers/nutrition_provider.dart';
 import '/services/nutrition_service.dart';
 
+
+
 class NutritionScreen extends ConsumerWidget {
   const NutritionScreen({super.key});
 
@@ -71,7 +73,6 @@ class NutritionScreen extends ConsumerWidget {
   }
 }
 
-/* ---------------------------- Totals + helpers ---------------------------- */
 
 class _Totals {
   final double calories;
@@ -102,7 +103,6 @@ Map<int, List<Meal>> _groupByHour(List<Meal> meals) {
   return {for (final k in keys) k: map[k]!};
 }
 
-/* ---------------------------------- UI ----------------------------------- */
 
 class _TotalsHeader extends StatelessWidget {
   const _TotalsHeader({required this.totals});
@@ -342,10 +342,6 @@ class _MealCard extends StatelessWidget {
     );
   }
 }
-
-/* ------------------------------ Bottom sheet ------------------------------ */
-
-/* ------------------------------ Bottom sheet ------------------------------ */
 
 class _LogMealSheet extends ConsumerStatefulWidget {
   const _LogMealSheet({required this.ref, this.existing});
@@ -752,17 +748,8 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
                                     ? (_selected.length == 1 ? _selected.first.name : 'Saved meal')
                                     : _mealNameCtrl.text.trim();
 
-                                final template = SavedMeal(
-                                  id: DateTime.now().microsecondsSinceEpoch.toString(),
-                                  name: name,
-                                  calories: _kcal,
-                                  protein: _p,
-                                  carbs: _c,
-                                  fat: _f,
-                                  notes: _encodeNotes(_selected), 
-                                );
-
-                                await widget.ref.read(savedMealControllerProvider.notifier).save(template);
+                                final actions = ref.read(savedMealsActionsProvider);
+                                await actions.saveMealTemplate(Meal(id: DateTime.now().microsecondsSinceEpoch.toString(), name: name, calories: _kcal, protein: _p, carbs: _c, fat: _f, notes: _encodeNotes(_selected), loggedAt: DateTime.now()));
 
                                 if (!mounted) return;
                                 Navigator.pop(context);
@@ -1114,9 +1101,6 @@ class _ServingPickerDialogState extends State<_ServingPickerDialog> {
     );
   }
 }
-
-/* ----------------------------- Local data type ---------------------------- */
-
 
 class _FoodSelection {
   final String name;
