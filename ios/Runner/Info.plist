@@ -5,7 +5,7 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>This app uses the camera to scan barcodes for food logging.</string>
+	<string>This app uses the camera.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Allow access to pick images and videos</string>
 	<key>CFBundleDevelopmentRegion</key>

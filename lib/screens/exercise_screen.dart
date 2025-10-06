@@ -5,6 +5,8 @@ import '/providers/exercise_provider.dart';
 
 import '/models/workout_plan.dart';
 
+import '/services/pose_landmark_detection.dart';
+
 import 'workout_viewer.dart';
 import 'workout_editor.dart';
 import 'workout_session.dart';
@@ -343,6 +345,18 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
                   child: Text('Error: $e'),
                 ),
               ),
+              
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PoseCameraPage()),
+                  );
+                },
+                icon: const Icon(Icons.hub_outlined),
+                label: const Text('Pose Overlay'),
+              ),
+
 
               const SizedBox(height: 8),
 

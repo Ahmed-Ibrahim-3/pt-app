@@ -94,7 +94,7 @@ class SettingsNotifier extends AsyncNotifier<UserSettings> {
     final tdee = bmr * s.activity.multiplier;
 
     final adj = switch (s.goal) { Goal.lose => -500.0, Goal.gain => 300.0, Goal.maintain => 0.0 };
-    final kcal = math.max(1000.0, tdee + adj);
+    final kcal = (tdee + adj);
 
     final proteinPerKg = switch (s.goal) { Goal.lose => 2.2, Goal.maintain => 1.8, Goal.gain => 1.6 };
     final proteinG = (s.weightKg * proteinPerKg).round();

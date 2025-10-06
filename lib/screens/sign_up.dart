@@ -113,7 +113,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                     Expanded(
                       child: DropdownButtonFormField<String>(
                         value: _gender,
-                        decoration: const InputDecoration(labelText: 'Gender'),
+                        decoration: const InputDecoration(labelText: 'Gender (at birth)'),
                         items: const [
                           DropdownMenuItem(value: 'male', child: Text('Male')),
                           DropdownMenuItem(value: 'female', child: Text('Female')),
