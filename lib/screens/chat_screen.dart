@@ -209,7 +209,6 @@ You are a fitness & nutrition assistant. Be specific and quantitative.
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Coach')),
       body: Padding(
@@ -347,7 +346,7 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxW = MediaQuery.of(context).size.width * 0.82;
-    final bg = fromUser ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceVariant;
+    final bg = fromUser ? Theme.of(context).colorScheme.primaryContainer : Theme.of(context).colorScheme.surfaceContainerHighest;
 
     return Align(
       alignment: fromUser ? Alignment.centerRight : Alignment.centerLeft,

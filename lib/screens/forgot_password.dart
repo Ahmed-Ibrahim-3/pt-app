@@ -18,16 +18,16 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
   Widget build(BuildContext context) {
     final auth = ref.read(firebaseAuthProvider);
 
-    Future<void> _send() async {
+    Future<void> send() async {
       if (!_formKey.currentState!.validate()) return;
       setState(() { _busy = true; _error = null; });
       try {
         await auth.sendPasswordResetEmail(email: _email.text.trim());
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Password reset email sent')),
-        );
-        Navigator.of(context).pop();
+        if (context.mounted){ 
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password reset email sent')), );
+          Navigator.of(context).pop();
+        }
       } catch (e) {
         setState(() => _error = e.toString());
       } finally {
@@ -56,7 +56,7 @@ class _ForgotPasswordPageState extends ConsumerState<ForgotPasswordPage> {
               ),
               const SizedBox(height: 20),
               FilledButton(
-                onPressed: _busy ? null : _send,
+                onPressed: _busy ? null : send,
                 child: const Text('Send reset link'),
               ),
             ],

@@ -109,31 +109,3 @@ class SettingsNotifier extends AsyncNotifier<UserSettings> {
     return MacroTargets(calories: kcal.round(), proteinG: proteinG, fatG: fatG, carbsG: carbsG);
   }
 }
-
-extension _UserSettingsCopy on UserSettings {
-  UserSettings copyWith({
-    String? name,
-    Gender? gender,
-    int? ageYears,
-    double? heightCm,
-    double? weightKg,
-    Goal? goal,
-    Units? units,
-    ActivityLevel? activity,
-    String? defaultGym,
-    ExperienceLevel? experience,
-  }) {
-    return UserSettings(
-      name: name ?? this.name,
-      gender: gender ?? this.gender,
-      ageYears: ageYears ?? this.ageYears,
-      heightCm: heightCm ?? this.heightCm,
-      weightKg: weightKg ?? this.weightKg,
-      goal: goal ?? this.goal,
-      units: units ?? this.units,
-      activity: activity ?? this.activity,
-      defaultGym: defaultGym ?? this.defaultGym,
-      experience: experience ?? this.experience,
-    );
-  }
-}

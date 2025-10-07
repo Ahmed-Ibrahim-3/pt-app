@@ -62,7 +62,7 @@ class WorkoutSummaryPage extends StatelessWidget {
           return ListView.separated(
             padding: const EdgeInsets.all(16),
             itemCount: entries.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, i) {
               final e = entries[i];
               final sets = e.sets;

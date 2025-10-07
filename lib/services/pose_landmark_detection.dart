@@ -1,10 +1,8 @@
 // lib/features/pose/pose_camera_page.dart
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 class PoseCameraPage extends StatefulWidget {
@@ -226,12 +224,6 @@ class _PosePainter extends CustomPainter {
     [PoseLandmarkType.leftKnee, PoseLandmarkType.leftAnkle],
     [PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee],
     [PoseLandmarkType.rightKnee, PoseLandmarkType.rightAnkle],
-    // head/eyes/ears 
-    // [PoseLandmarkType.leftEye, PoseLandmarkType.rightEye],
-    // [PoseLandmarkType.leftEar, PoseLandmarkType.leftEye],
-    // [PoseLandmarkType.rightEar, PoseLandmarkType.rightEye],
-    // [PoseLandmarkType.nose, PoseLandmarkType.leftEye],
-    // [PoseLandmarkType.nose, PoseLandmarkType.rightEye],
   ];
 
   @override

@@ -25,7 +25,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _weightLbCtrl = TextEditingController();
 
   bool _seeding = false;
-  bool _seededOnce = false; 
 
   String? _lastSeedSig;
   String _sig(UserSettings s) => [

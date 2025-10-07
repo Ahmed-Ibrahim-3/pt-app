@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:pt/main.dart';
 import '/providers/auth_provider.dart';
 import '/providers/profile_provider.dart';
 import '/models/user_settings.dart';
 import '/providers/settings_provider.dart';
-import '/services/firestore_sync.dart';
 
 class SignUpPage extends ConsumerStatefulWidget {
   const SignUpPage({super.key});
@@ -39,7 +37,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
     final auth = ref.read(authServiceProvider);
     final profiles = ref.read(userSettingsProvider);
 
-    Future<void> _create() async {
+    Future<void> create() async {
       if (!_formKey.currentState!.validate()) return;
       if (_password.text != _confirm.text) {
         setState(() => _error = 'Passwords do not match');
@@ -56,11 +54,10 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
       setState(() { _busy = true; _error = null; });
       try {
         final cred = await auth.createAccount(_email.text.trim(), _password.text);
-        final uid = cred.user!.uid;
 
         await cred.user!.updateDisplayName(_name.text.trim());
 
-        await profiles;
+        profiles;
 
          final settings = UserSettings(
           name: _name.text.trim(),
@@ -76,7 +73,8 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
       await ref.read(settingsProvider.notifier).save(settings);
       await FirebaseAuth.instance.currentUser?.updateDisplayName(settings.name);
 
-      if (mounted) {
+
+      if (context.mounted) {
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
       } catch (e) {
@@ -202,7 +200,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
               ),
               const SizedBox(height: 20),
               FilledButton(
-                onPressed: _busy ? null : _create,
+                onPressed: _busy ? null : create,
                 child: _busy ? const CircularProgressIndicator() : const Text('Create account'),
               ),
               const SizedBox(height: 24),

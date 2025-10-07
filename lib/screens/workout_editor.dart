@@ -57,7 +57,7 @@ class _PlanEditorPageState extends ConsumerState<PlanEditorPage> {
                 await repo.update(widget.existing!,
                     name: name, exerciseIds: _selected.toList());
               }
-              if (mounted) Navigator.pop(context);
+              if (context.mounted)Navigator.of(context).pop();
             },
             child: const Text('Save'),
           ),
@@ -124,7 +124,7 @@ class _PlanEditorPageState extends ConsumerState<PlanEditorPage> {
                 }
                 return ListView.separated(
                   itemCount: list.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final ex = list[i];
                     final picked = _selected.contains(ex.stableId);

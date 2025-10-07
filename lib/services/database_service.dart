@@ -2,7 +2,6 @@ import 'package:hive/hive.dart';
 import '../models/meal_model.dart';
 
 class MealDatabaseService {
-  static const _boxName = 'meals_box';
   Box<Meal>? _box;
   String? _uid;
 

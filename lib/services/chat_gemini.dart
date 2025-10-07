@@ -353,13 +353,11 @@ Avoid extreme claims; do not diagnose conditions. Keep wording concise.
     }
 
     _history.add(Content('user', parts));
-    final modelContent = resp.candidates?.first.content;
-    if (modelContent != null) {
-      _history.add(modelContent);
-    }
+    final modelContent = resp.candidates.first.content;
+    _history.add(modelContent);
 
     final calls = resp.functionCalls;
-    if (calls != null && calls.isNotEmpty) {
+    if (calls.isNotEmpty) {
       for (final f in calls) {
         final m = f.args;
         switch (f.name) {
@@ -452,7 +450,7 @@ Avoid extreme claims; do not diagnose conditions. Keep wording concise.
             );
           }
         }
-        if ((calls == null || calls.isEmpty) && nudgeEstimateFromMedia) {
+        if (( calls.isEmpty) && nudgeEstimateFromMedia) {
           final enforceParts = <Part>[
             TextPart('[TOOL_ENFORCE] Convert the user message into a call to estimate_meal_from_input. '
                 'Return ONLY the function call with: title, ingredients[{name,amount,unit,calories,protein,carbs,fat}], '
@@ -473,7 +471,7 @@ Avoid extreme claims; do not diagnose conditions. Keep wording concise.
           }
 
           final calls2 = resp2.functionCalls;
-          if (calls2 != null && calls2.isNotEmpty) {
+          if (calls2.isNotEmpty) {
             final f = calls2.first;
             final m = f.args;
 

@@ -101,7 +101,7 @@ class _WorkoutSessionPageState extends ConsumerState<WorkoutSessionPage> {
       body: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
         itemCount: ses.entries.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        separatorBuilder: (_, _) => const SizedBox(height: 12),
         itemBuilder: (context, i) {
           final entry = ses.entries[i];
           final exName = _parseNameFromStableId(entry.exerciseStableId);
@@ -163,7 +163,7 @@ class _WorkoutSessionPageState extends ConsumerState<WorkoutSessionPage> {
     try {
       final results = await api.search(name: name, muscle: muscle);
       final first = results.isNotEmpty ? results.first : null;
-      if (!mounted) return;
+      if (!context.mounted) return;
       showModalBottomSheet(
         context: context,
         showDragHandle: true,

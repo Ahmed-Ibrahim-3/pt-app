@@ -559,7 +559,7 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: savedMeals.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (_, i) {
                     final sm = savedMeals[i];
                     return GestureDetector(
@@ -582,9 +582,11 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
                         if (confirm == true) {
                           await ref.read(savedMealControllerProvider.notifier).delete(sm.id);
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Deleted "${sm.name}"')),
-                          );
+                          if (context.mounted){
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Deleted "${sm.name}"')),
+                            );
+                          }
                         }
                       },
                       child: ActionChip(
@@ -680,7 +682,7 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
                           await widget.ref
                               .read(mealControllerProvider.notifier)
                               .deleteMeal(widget.existing!.id);
-                          if (mounted) Navigator.pop(context);
+                          if (context.mounted) Navigator.pop(context);
                         }
                       },
                     ),
@@ -707,7 +709,7 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
                                       notes: _encodeNotes(_selected),
                                     );
                                     await widget.ref.read(mealControllerProvider.notifier).addOrUpdateMeal(meal);
-                                    if (mounted) Navigator.pop(context);
+                                    if (context.mounted) Navigator.pop(context);
                                   },
                           )
                         : FilledButton.icon(
@@ -729,7 +731,7 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
                                       notes: _encodeNotes(_selected),
                                     );
                                     await widget.ref.read(mealControllerProvider.notifier).addOrUpdateMeal(meal);
-                                    if (mounted) Navigator.pop(context);
+                                    if (context.mounted) Navigator.pop(context);
                                   },
                           ),
                   ),
@@ -752,10 +754,12 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
                                 await actions.saveMealTemplate(Meal(id: DateTime.now().microsecondsSinceEpoch.toString(), name: name, calories: _kcal, protein: _p, carbs: _c, fat: _f, notes: _encodeNotes(_selected), loggedAt: DateTime.now()));
 
                                 if (!mounted) return;
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Saved "$name" for later')),
-                                );
+                                if (context.mounted){
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Saved "$name" for later')),
+                                  );
+                                }
                               },
                       ),
                     ),
@@ -781,13 +785,12 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
     final loc = Localizations.maybeLocaleOf(context);
     final region = loc?.countryCode;    
     final language = loc?.languageCode;  
-
     setState(() => _busy = true);
     try {
       final details = await ref
           .read(nutritionServiceProvider)
           .getFoodDetailsByBarcode(raw, region: region, language: language);
-
+      
       final picked = await showDialog<_FoodSelection>(
         context: context,
         builder: (_) => _ServingPickerDialog(food: details),
@@ -860,7 +863,7 @@ class _SearchResultsList extends StatelessWidget {
       height: min(360, MediaQuery.of(context).size.height * 0.45),
       child: ListView.separated(
         itemCount: results.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
+        separatorBuilder: (_, _) => const Divider(height: 1),
         itemBuilder: (_, i) {
           final f = results[i];
           return ListTile(
@@ -901,7 +904,7 @@ class _SelectedFoodsList extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
       itemCount: items.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, _) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final it = items[i];
 

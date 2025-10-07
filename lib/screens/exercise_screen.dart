@@ -418,7 +418,7 @@ class _AssignmentSheet extends StatelessWidget {
                 child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: plans.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, i) {
                     final p = plans[i];
                     return ListTile(
@@ -486,7 +486,7 @@ class _WorkoutsTab extends ConsumerWidget {
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
             itemCount: plans.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, i) {
               final p = plans[i];
               return Card(

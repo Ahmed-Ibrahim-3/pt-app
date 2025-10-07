@@ -72,18 +72,18 @@ class UserSettings {
 
   factory UserSettings.fromMap(Map<String, dynamic>? m) {
     if (m == null) return UserSettings.initial();
-    T _enum<T>(String v, List<T> values) =>
+    T profileEnum<T>(String v, List<T> values) =>
         values.firstWhere((e) => (e as dynamic).name == v, orElse: () => values.first);
     return UserSettings(
       name: (m['name'] ?? '') as String,
-      gender: _enum(m['gender'] ?? 'male', Gender.values),
+      gender: profileEnum(m['gender'] ?? 'male', Gender.values),
       ageYears: (m['ageYears'] ?? 30) as int,
       heightCm: (m['heightCm'] ?? 175).toDouble(),
       weightKg: (m['weightKg'] ?? 75).toDouble(),
-      goal: _enum(m['goal'] ?? 'maintain', Goal.values),
-      units: _enum(m['units'] ?? 'metric', Units.values),
-      activity: _enum(m['activity'] ?? 'moderate', ActivityLevel.values),
-      experience: _enum(m['experience'] ?? 'beginner', ExperienceLevel.values),
+      goal: profileEnum(m['goal'] ?? 'maintain', Goal.values),
+      units: profileEnum(m['units'] ?? 'metric', Units.values),
+      activity: profileEnum(m['activity'] ?? 'moderate', ActivityLevel.values),
+      experience: profileEnum(m['experience'] ?? 'beginner', ExperienceLevel.values),
       defaultGym: (m['defaultGym'] ?? '') as String,
     );
   }

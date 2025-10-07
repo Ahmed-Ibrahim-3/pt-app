@@ -64,7 +64,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               mealsTodayAsync.when(
                 data: (mealsToday) => _buildTopCard(context, mealsToday),
                 loading: () => const _SkeletonCard(height: 170),
-                error: (_, __) => _ErrorCard(onRetry: () => setState(() {})),
+                error: (_, _) => _ErrorCard(onRetry: () => setState(() {})),
               ),
               const SizedBox(height: 8), 
               _buildCalendarSection(context),
@@ -209,11 +209,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             const SizedBox(height: 8),
             mealsAsync.when(
               loading: () => const _SkeletonCalendar(),
-              error: (_, __) => _ErrorInline(onRetry: () => setState(() {})),
+              error: (_, _) => _ErrorInline(onRetry: () => setState(() {})),
               data: (allMeals) {
                 return assignsAsync.when(
                   loading: () => const _SkeletonCalendar(),
-                  error: (_, __) => _ErrorInline(onRetry: () => setState(() {})),
+                  error: (_, _) => _ErrorInline(onRetry: () => setState(() {})),
                   data: (assignments) {
                     final model = _buildMonthModel(allMeals, assignments);
                     return _MonthGrid(

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 
 import '../providers/settings_provider.dart';
-import '../providers/auth_provider.dart';
 import '../providers/exercise_provider.dart';
 
 import '../models/user_settings.dart';
@@ -56,8 +55,6 @@ class FirestoreSync {
       _userDoc.collection('assignments');
   CollectionReference<Map<String, dynamic>> get _mealsCol =>
       _userDoc.collection('meals');
-  CollectionReference<Map<String, dynamic>> get _sessionsCol =>
-      _userDoc.collection('sessions');
   CollectionReference<Map<String, dynamic>> get _savedMealsCol =>
       _userDoc.collection('savedMeals');
 
