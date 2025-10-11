@@ -1,4 +1,3 @@
-// lib/services/firestore_sync.dart
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -57,6 +56,8 @@ class FirestoreSync {
       _userDoc.collection('meals');
   CollectionReference<Map<String, dynamic>> get _savedMealsCol =>
       _userDoc.collection('savedMeals');
+  CollectionReference<Map<String, dynamic>> get _sessionsCol =>
+    _userDoc.collection('sessions');
 
   String get _plansBoxName => ExerciseHive.plansBoxFor(_uid);
   String get _assignBoxName => ExerciseHive.assignmentsBoxFor(_uid); 
@@ -248,7 +249,54 @@ class FirestoreSync {
 
   Future<void> pushSessionsNow() async {
     if (_uid == null || _inRefresh) return;
+    final box = await _ensureOpen<WorkoutSession>(_sessionsBoxName);
+
+    final remote = await _sessionsCol.get();
+    final remoteIds = remote.docs.map((d) => d.id).toSet();
+    final localIds = <String>{};
+
+    final batch = _db.batch();
+
+    for (final key in box.keys) {
+      final id = key.toString();
+      final s = box.get(key);
+      if (s == null) continue;
+      localIds.add(id);
+
+      final entries = [
+        for (final e in s.entries)
+          {
+            'exerciseId': e.exerciseStableId,
+            'sets': [
+              for (final set in e.sets)
+                {
+                  'reps': set.reps,
+                  'weight': set.weight,
+                  'done': set.done,
+                }
+            ],
+          }
+      ];
+
+      batch.set(_sessionsCol.doc(id), {
+        'date': Timestamp.fromDate(s.date),
+        'planKey': s.planKey,
+        'entries': entries,
+        'startedAt': Timestamp.fromDate(s.startedAt),
+        'finishedAt': s.finishedAt != null ? Timestamp.fromDate(s.finishedAt!) : null,
+        'completed': s.completed,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+
+    for (final rid in remoteIds.difference(localIds)) {
+      batch.delete(_sessionsCol.doc(rid));
+    }
+
+    await batch.commit();
   }
+
 
   Future<void> pushAllNow() async {
     if (_uid == null) return;
@@ -263,6 +311,7 @@ class FirestoreSync {
       pushPlansNow(),
       pushAssignmentsNow(),
       pushMealsNow(),
+      pushSessionsNow()
     ]);
   }
 
@@ -353,6 +402,42 @@ class FirestoreSync {
     } finally {
       _inRefresh = false;
       await startMirrors();
+    }
+
+    final sessionsBox = await _ensureOpen<WorkoutSession>(_sessionsBoxName);
+    await sessionsBox.clear();
+    final sessions = await _sessionsCol.get();
+    for (final d in sessions.docs) {
+      final data = d.data();
+
+      final entries = <WorkoutEntry>[];
+      final rawEntries = (data['entries'] as List?) ?? const [];
+      for (final e in rawEntries) {
+        final sets = <SetEntry>[];
+        final rawSets = (e['sets'] as List?) ?? const [];
+        for (final s in rawSets) {
+          sets.add(SetEntry(
+            reps: (s['reps'] as num?)?.toInt() ?? 0,
+            weight: (s['weight'] as num?)?.toDouble() ?? 0.0,
+            done: (s['done'] as bool?) ?? false,
+          ));
+        }
+        entries.add(WorkoutEntry(
+          exerciseStableId: (e['exerciseId'] as String?) ?? '',
+          sets: sets,
+        ));
+      }
+
+      final session = WorkoutSession(
+        date: (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        planKey: (data['planKey'] as num?)?.toInt() ?? 0,
+        entries: entries,
+        startedAt: (data['startedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+        finishedAt: (data['finishedAt'] as Timestamp?)?.toDate(),
+        completed: (data['completed'] as bool?) ?? false,
+      );
+
+      await sessionsBox.put(d.id, session);
     }
   }
 }

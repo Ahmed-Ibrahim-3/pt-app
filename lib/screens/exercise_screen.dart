@@ -10,6 +10,7 @@ import '/services/pose_landmark_detection.dart';
 import 'workout_viewer.dart';
 import 'workout_editor.dart';
 import 'workout_session.dart';
+import 'exercise_analytics_screen.dart';
 
 const int kRestPlanKey = -1;
 enum _WorkoutsMenu { edit, delete }
@@ -99,6 +100,14 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Exercise'),
+        actions: [
+          IconButton(
+            tooltip: 'Analytics',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ExerciseAnalyticsPage()));
+            }, 
+            icon: const Icon(Icons.show_chart))
+        ],
         bottom: TabBar(
           controller: _tab,
           tabs: const [

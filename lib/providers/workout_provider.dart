@@ -57,10 +57,23 @@ class WorkoutSessionRepo {
     yield snap();
     yield* box.watch(key: key).map((_) => snap());
   }
+
+  Stream<List<WorkoutSession>> watchAll() async* {
+    List<WorkoutSession> snap() {
+      final items = box.values.toList()
+        ..sort((a, b) => a.date.compareTo(b.date)); 
+      return items;
+    }
+    yield snap();
+    yield* box.watch().map((_) => snap());
+  }
+  
 }
 
-final workoutSessionRepoProvider =
-    Provider((ref) => WorkoutSessionRepo(ref.watch(_sessionsBoxProvider)));
+final workoutSessionRepoProvider = Provider<WorkoutSessionRepo>((ref) {
+  final box = Hive.box<WorkoutSession>(ExerciseHive.sessionsBox);
+  return WorkoutSessionRepo(box);
+});
 
 final workoutSessionForDayProvider =
     StreamProvider.family<WorkoutSession?, DateTime>((ref, day) {
@@ -77,4 +90,15 @@ final _sessionsBoxProvider = Provider<Box<WorkoutSession>>((ref) {
   final uid = ref.watch(authStateProvider).value?.uid;
   ref.watch(_openSessionsBoxProvider); 
   return Hive.box<WorkoutSession>(ExerciseHive.sessionsBoxFor(uid));
+});
+
+final sessionForDayProvider =
+    StreamProvider.family<WorkoutSession?, DateTime>((ref, date) {
+  final repo = ref.watch(workoutSessionRepoProvider);
+  return repo.watchForDay(date);
+});
+
+final allSessionsProvider = StreamProvider<List<WorkoutSession>>((ref) {
+  final repo = ref.watch(workoutSessionRepoProvider);
+  return repo.watchAll();
 });

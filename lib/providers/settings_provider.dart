@@ -1,4 +1,3 @@
-// lib/providers/settings_provider.dart
 import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -94,13 +93,13 @@ class SettingsNotifier extends AsyncNotifier<UserSettings> {
     final tdee = bmr * s.activity.multiplier;
 
     final adj = switch (s.goal) { Goal.lose => -500.0, Goal.gain => 300.0, Goal.maintain => 0.0 };
-    final kcal = (tdee + adj);
+    final kcal = math.max(0,(tdee + adj));
 
     final proteinPerKg = switch (s.goal) { Goal.lose => 2.2, Goal.maintain => 1.8, Goal.gain => 1.6 };
-    final proteinG = (s.weightKg * proteinPerKg).round();
+    final proteinG = math.max(0,(s.weightKg * proteinPerKg)).round();
 
     final fatPct = s.goal == Goal.lose ? 0.20 : 0.25;
-    final fatG = ((kcal * fatPct) / 9.0).round();
+    final fatG = math.max(0,((kcal * fatPct) / 9.0)).round();
 
     final kcalFromProtein = proteinG * 4;
     final kcalFromFat = fatG * 9;

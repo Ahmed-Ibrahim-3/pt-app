@@ -1,9 +1,10 @@
-// lib/features/pose/pose_camera_page.dart
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
+
+import 'pose_comparison.dart';
 
 class PoseCameraPage extends StatefulWidget {
   const PoseCameraPage({super.key});
@@ -22,6 +23,10 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
   List<Pose> _poses = [];
   Size? _imageSize; 
   InputImageRotation? _lastRotation;
+
+  final PoseFrameTemplate _selectedTemplate = ExercisePoseTemplates.squatBottom();
+  double _lastScore = 0.0;
+
 
   static const _orientations = <DeviceOrientation, int>{
     DeviceOrientation.portraitUp: 0,
@@ -76,6 +81,11 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
       if (!mounted) return;
       setState(() {
         _poses = poses;
+        if (poses.isNotEmpty) {
+          final angles = PoseAngles.fromPose(poses.first);
+          final result = PoseComparator.compare(angles, _selectedTemplate);
+          _lastScore = result.overallScore;
+        }
       });
     } catch (_) {
     } finally {
@@ -187,6 +197,23 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
                           lensDirection: _cameras[_cameraIndex].lensDirection,
                         ),
                       ),
+                      Positioned(
+                      left: 12,
+                      top: 12,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          child: Text(
+                            '${_selectedTemplate.id}  •  ${_lastScore.toStringAsFixed(2)}%',
+                            style: const TextStyle(color: Colors.red, fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 );
               },
