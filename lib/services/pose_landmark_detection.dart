@@ -1,5 +1,6 @@
-// lib/features/pose/pose_camera_page.dart
+// lib/services/pose_landmark_detection.dart
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,9 @@ class PoseCameraPage extends StatefulWidget {
 }
 
 class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObserver {
+
+  bool _screenSpaceLabels = true;
+
   CameraController? _controller;
   List<CameraDescription> _cameras = [];
   int _cameraIndex = 0;
@@ -20,8 +24,35 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
 
   bool _isBusy = false;
   List<Pose> _poses = [];
-  Size? _imageSize; 
+  Size? _imageSize;
   InputImageRotation? _lastRotation;
+
+  Map<String, int> _angleDisplay = const {};
+
+  PoseLandmarkType _swapLR(PoseLandmarkType t) {
+    switch (t) {
+      case PoseLandmarkType.leftShoulder: return PoseLandmarkType.rightShoulder;
+      case PoseLandmarkType.rightShoulder: return PoseLandmarkType.leftShoulder;
+      case PoseLandmarkType.leftElbow: return PoseLandmarkType.rightElbow;
+      case PoseLandmarkType.rightElbow: return PoseLandmarkType.leftElbow;
+      case PoseLandmarkType.leftWrist: return PoseLandmarkType.rightWrist;
+      case PoseLandmarkType.rightWrist: return PoseLandmarkType.leftWrist;
+      case PoseLandmarkType.leftHip: return PoseLandmarkType.rightHip;
+      case PoseLandmarkType.rightHip: return PoseLandmarkType.leftHip;
+      case PoseLandmarkType.leftKnee: return PoseLandmarkType.rightKnee;
+      case PoseLandmarkType.rightKnee: return PoseLandmarkType.leftKnee;
+      case PoseLandmarkType.leftAnkle: return PoseLandmarkType.rightAnkle;
+      case PoseLandmarkType.rightAnkle: return PoseLandmarkType.leftAnkle;
+      default: return t; 
+    }
+  }
+
+    PoseLandmark? _lm(Map<PoseLandmarkType, PoseLandmark> lms, PoseLandmarkType t) {
+    final isFront = _cameras.isNotEmpty &&
+        _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+    final useScreenSpace = _screenSpaceLabels && isFront;
+    return lms[useScreenSpace ? _swapLR(t) : t];
+  }
 
   static const _orientations = <DeviceOrientation, int>{
     DeviceOrientation.portraitUp: 0,
@@ -52,8 +83,8 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
       ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: Platform.isAndroid
-          ? ImageFormatGroup.nv21 
-          : ImageFormatGroup.bgra8888, 
+          ? ImageFormatGroup.nv21
+          : ImageFormatGroup.bgra8888,
     );
     _controller = controller;
     await controller.initialize();
@@ -73,12 +104,18 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
         return;
       }
       final poses = await _poseDetector.processImage(inputImage);
+
+      Map<String, int> angles = {};
+      if (poses.isNotEmpty) {
+        angles = _computeAngles(poses.first);
+      }
+
       if (!mounted) return;
       setState(() {
         _poses = poses;
+        _angleDisplay = angles;
       });
-    } catch (_) {
-    } finally {
+    } catch (_) {} finally {
       _isBusy = false;
     }
   }
@@ -118,8 +155,8 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
       bytes: plane.bytes,
       metadata: InputImageMetadata(
         size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,           
-        format: format,            
+        rotation: rotation,
+        format: format,
         bytesPerRow: plane.bytesPerRow,
       ),
     );
@@ -152,10 +189,73 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
     _cameraIndex = (_cameraIndex + 1) % _cameras.length;
     setState(() {
       _poses = [];
+      _angleDisplay = const {};
     });
     await _startCamera();
   }
 
+  Map<String, int> _computeAngles(Pose pose) {
+    final lms = pose.landmarks;
+
+    int? d(double? v) => (v == null || v.isNaN) ? null : v.round();
+
+    double? ang(PoseLandmark? a, PoseLandmark? b, PoseLandmark? c) {
+      if (a == null || b == null || c == null) return null;
+      final abx = a.x - b.x, aby = a.y - b.y;
+      final cbx = c.x - b.x, cby = c.y - b.y;
+      final dot = (abx * cbx) + (aby * cby);
+      final mab = math.sqrt(abx * abx + aby * aby);
+      final mcb = math.sqrt(cbx * cbx + cby * cby);
+      final denom = mab * mcb;
+      if (denom < 1e-6) return null;
+      final cosv = (dot / denom).clamp(-1.0, 1.0);
+      return (math.acos(cosv) * 180.0 / math.pi);
+    }
+
+    final out = <String, int?>{
+      'L Shoulder': d(ang(_lm(lms, PoseLandmarkType.leftElbow),
+                          _lm(lms, PoseLandmarkType.leftShoulder),
+                          _lm(lms, PoseLandmarkType.leftHip))),
+      'R Shoulder': d(ang(_lm(lms, PoseLandmarkType.rightElbow),
+                          _lm(lms, PoseLandmarkType.rightShoulder),
+                          _lm(lms, PoseLandmarkType.rightHip))),
+      'L Elbow'   : d(ang(_lm(lms, PoseLandmarkType.leftShoulder),
+                          _lm(lms, PoseLandmarkType.leftElbow),
+                          _lm(lms, PoseLandmarkType.leftWrist))),
+      'R Elbow'   : d(ang(_lm(lms, PoseLandmarkType.rightShoulder),
+                          _lm(lms, PoseLandmarkType.rightElbow),
+                          _lm(lms, PoseLandmarkType.rightWrist))),
+      'L Hip'     : d(ang(_lm(lms, PoseLandmarkType.leftShoulder),
+                          _lm(lms, PoseLandmarkType.leftHip),
+                          _lm(lms, PoseLandmarkType.leftKnee))),
+      'R Hip'     : d(ang(_lm(lms, PoseLandmarkType.rightShoulder),
+                          _lm(lms, PoseLandmarkType.rightHip),
+                          _lm(lms, PoseLandmarkType.rightKnee))),
+      'L Knee'    : d(ang(_lm(lms, PoseLandmarkType.leftHip),
+                          _lm(lms, PoseLandmarkType.leftKnee),
+                          _lm(lms, PoseLandmarkType.leftAnkle))),
+      'R Knee'    : d(ang(_lm(lms, PoseLandmarkType.rightHip),
+                          _lm(lms, PoseLandmarkType.rightKnee),
+                          _lm(lms, PoseLandmarkType.rightAnkle))),
+    };
+
+    return out.entries
+        .where((e) => e.value != null)
+        .map((e) => MapEntry(e.key, e.value!))
+        .fold<Map<String, int>>({}, (m, e) { m[e.key] = e.value; return m; });
+  }
+
+
+  Widget _maybeFlip(Widget child) {
+    final isFrontIOS = Platform.isIOS &&
+        _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
+    if (!isFrontIOS) return child;
+    return Transform(
+      alignment: Alignment.center,
+      transform: Matrix4.identity()..scale(-1.0, 1.0, 1.0),
+      child: child,
+    );
+  }
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
@@ -177,7 +277,7 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
                 return Stack(
                   fit: StackFit.expand,
                   children: [
-                    CameraPreview(controller),
+                    _maybeFlip(CameraPreview(controller)),
                     if (_imageSize != null && _poses.isNotEmpty)
                       CustomPaint(
                         painter: _PosePainter(
@@ -185,6 +285,28 @@ class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObse
                           imageSize: _imageSize!,
                           rotation: _lastRotation,
                           lensDirection: _cameras[_cameraIndex].lensDirection,
+                        ),
+                      ),
+
+                    if (_angleDisplay.isNotEmpty)
+                      Positioned(
+                        left: 12,
+                        top: 12,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: .45),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: DefaultTextStyle(
+                            style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.2),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: _angleDisplay.entries
+                                  .map((e) => Text('${e.key}: ${e.value}°'))
+                                  .toList(),
+                            ),
+                          ),
                         ),
                       ),
                   ],
@@ -208,6 +330,20 @@ class _PosePainter extends CustomPainter {
   final InputImageRotation? rotation;
   final CameraLensDirection lensDirection;
 
+  static const _faceTypes = <PoseLandmarkType>{
+    PoseLandmarkType.nose,
+    PoseLandmarkType.leftEyeInner,
+    PoseLandmarkType.leftEye,
+    PoseLandmarkType.leftEyeOuter,
+    PoseLandmarkType.rightEyeInner,
+    PoseLandmarkType.rightEye,
+    PoseLandmarkType.rightEyeOuter,
+    PoseLandmarkType.leftEar,
+    PoseLandmarkType.rightEar,
+    PoseLandmarkType.leftMouth,
+    PoseLandmarkType.rightMouth,
+  };
+
   static const _edges = <List<PoseLandmarkType>>[
     // torso
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder],
@@ -230,8 +366,12 @@ class _PosePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (poses.isEmpty) return;
 
-    final jointPaint = Paint()..style = PaintingStyle.fill..strokeWidth = 2.0;
-    final bonePaint = Paint()..style = PaintingStyle.stroke..strokeWidth = 3.0;
+    final jointPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..strokeWidth = 2.0;
+    final bonePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
 
     final scaleX = size.width / imageSize.width;
     final scaleY = size.height / imageSize.height;
@@ -248,6 +388,7 @@ class _PosePainter extends CustomPainter {
       }
 
       for (final l in pose.landmarks.values) {
+        if (_faceTypes.contains(l.type)) continue;
         final p = _toCanvas(l, scaleX, scaleY, size);
         canvas.drawCircle(p, 4.0, jointPaint);
       }
@@ -262,7 +403,6 @@ class _PosePainter extends CustomPainter {
   ) {
     var x = l.x * scaleX;
     final y = l.y * scaleY;
-
     final isFront = lensDirection == CameraLensDirection.front;
     if (isFront) {
       x = canvasSize.width - x; 
