@@ -1,11 +1,16 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 import '/providers/nutrition_provider.dart';
 import '/providers/exercise_provider.dart';
+import '/providers/exercise_analytics_provider.dart';
 import '/providers/settings_provider.dart';
 
 import '/models/meal_model.dart';
@@ -38,6 +43,76 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const double _partialThreshold = 0.65;
   static const double _overThreshold = 1.35;
 
+ 
+  static const _sleepKey = 'sleep_log_v1'; 
+  Map<String, double> _sleepLog = {};
+  final Map<String, TextEditingController> _sleepCtrls = {};
+  bool _sleepLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSleep();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _sleepCtrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  List<DateTime> _past7Dates() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return [for (int i = 6; i >= 0; i--) today.subtract(Duration(days: i))]; 
+  }
+
+  Future<void> _loadSleep() async {
+    final sp = await SharedPreferences.getInstance();
+    final raw = sp.getString(_sleepKey);
+    if (raw != null) {
+      try {
+        final m = Map<String, dynamic>.from(jsonDecode(raw));
+        _sleepLog = m.map((k, v) => MapEntry(k, (v as num).toDouble()));
+      } catch (_) {}
+    }
+    _ensureSleepControllers();
+    if (mounted) setState(() => _sleepLoaded = true);
+  }
+
+  void _ensureSleepControllers() {
+    for (final d in _past7Dates()) {
+      final key = _ymd(d);
+      _sleepCtrls.putIfAbsent(key, () => TextEditingController());
+      _sleepCtrls[key]!.text = _sleepLog[key]?.toStringAsFixed(1) ?? '';
+    }
+  }
+
+  Future<void> _saveSleepFor(DateTime day, String txt) async {
+    final v = double.tryParse(txt.trim());
+    if (v == null || v < 0 || v > 24) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter hours between 0 and 24')),
+        );
+      }
+      return;
+    }
+    final sp = await SharedPreferences.getInstance();
+    _sleepLog[_ymd(day)] = v;
+    await sp.setString(_sleepKey, jsonEncode(_sleepLog));
+    if (mounted) {
+      _sleepCtrls[_ymd(day)]?.text = v.toStringAsFixed(1);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved')));
+      setState(() {});
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -66,8 +141,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 loading: () => const _SkeletonCard(height: 170),
                 error: (_, _) => _ErrorCard(onRetry: () => setState(() {})),
               ),
-              const SizedBox(height: 8), 
+              const SizedBox(height: 12), 
               _buildCalendarSection(context),
+              const SizedBox(height: 12),
+              const _MuscleRadarCard(),
+
+              const SizedBox(height: 12),
+              _buildSleepRowCard(),
+              const SizedBox(height: 12),
             ],
           ),
         ),
@@ -193,6 +274,75 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  Widget _buildSleepRowCard() {
+    final days = _past7Dates();
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Sleep (last 7 days)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final d in days)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Text(DateFormat.E().format(d),
+                          style: Theme.of(context).textTheme.labelSmall),
+                      const SizedBox(height: 6),
+                      AspectRatio(
+                        aspectRatio: 1,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Theme.of(context).dividerColor.withOpacity(0.6),
+                            ),
+                          ),
+                          child: Center(
+                            child: TextFormField(
+                              controller: _sleepCtrls[_ymd(d)],
+                              enabled: _sleepLoaded,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(RegExp(r'^\d{0,2}(\.\d{0,1})?$')),
+                              ],
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                isDense: true,
+                                contentPadding: EdgeInsets.zero,
+                                hintText: '—',
+                              ),
+                              onFieldSubmitted: (txt) => _saveSleepFor(d, txt),
+                              onTapOutside: (_) => _saveSleepFor(d, _sleepCtrls[_ymd(d)]?.text ?? ''),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              'Today →',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                  ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildCalendarSection(BuildContext context) {
     final mealsAsync = ref.watch(_allMealsProvider);
     final assignsAsync = ref.watch(_assignmentsProvider);
@@ -286,7 +436,6 @@ _MonthModel _buildMonthModel(List<Meal> allMeals, List<PlanAssignment> assignmen
 
   return _MonthModel(firstOfMonth: firstOfMonth, daysInMonth: daysInMonth, days: entries);
 }
-
 
   Future<void> _editCalorieGoal() async {
     final controller = TextEditingController(text: _calorieGoal.toString());
@@ -405,6 +554,155 @@ class _MacroBar extends StatelessWidget {
     );
   }
 }
+
+
+class _MuscleRadarCard extends ConsumerWidget {
+  const _MuscleRadarCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final split = ref.watch(muscleSplitProvider(ExRange.month));
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
+
+    final buckets = toRadarBuckets(split.byMuscle);
+    final values = normalizedAxisValues(buckets);
+
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('Muscle Distribution', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 220,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _RadarGridBackground(
+                  sides: kRadarAxes.length,
+                  rings: 5,
+                  color: onSurface,
+                  outerOpacity: 0.28,
+                  innerOpacity: 0.06,
+                ),
+                RadarChart(
+                  RadarChartData(
+                    radarShape: RadarShape.polygon,
+                    ticksTextStyle: const TextStyle(fontSize: 0, color: Colors.transparent),
+                    gridBorderData: const BorderSide(color: Colors.transparent),
+                    tickBorderData: const BorderSide(color: Colors.transparent),
+                    radarBorderData: const BorderSide(color: Colors.transparent),
+                    tickCount: 5,
+                    titlePositionPercentageOffset: 0.10,
+                    getTitle: (i, angle) => RadarChartTitle(
+                      text: kRadarAxes[i],
+                    ),
+                    dataSets: [
+                      RadarDataSet(
+                        dataEntries: [for (final v in values) RadarEntry(value: v)],
+                        entryRadius: 3,
+                        borderWidth: 2,
+                        fillColor: theme.colorScheme.primary.withValues(alpha: 0.20),
+                        borderColor: theme.colorScheme.primary,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _RadarGridBackground extends StatelessWidget {
+  const _RadarGridBackground({
+    this.sides = 6,
+    this.rings = 5,
+    required this.color,
+    this.outerOpacity = 0.30,
+    this.innerOpacity = 0.06,
+  });
+
+  final int sides;
+  final int rings;
+  final Color color;
+  final double outerOpacity;
+  final double innerOpacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _RadarGridPainter(
+        sides: sides,
+        rings: rings,
+        color: color,
+        outerOpacity: outerOpacity,
+        innerOpacity: innerOpacity,
+      ),
+    );
+  }
+}
+
+class _RadarGridPainter extends CustomPainter {
+  _RadarGridPainter({
+    required this.sides,
+    required this.rings,
+    required this.color,
+    required this.outerOpacity,
+    required this.innerOpacity,
+  }) : assert(sides >= 3 && rings >= 1);
+
+  final int sides;
+  final int rings;
+  final Color color;
+  final double outerOpacity;
+  final double innerOpacity;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = (math.min(size.width, size.height) / 2) - 6;
+    const startAngle = -math.pi / 2; 
+
+    for (int i = rings; i >= 1; i--) {
+      final t = i / rings; 
+      final r = radius * t;
+      final a = innerOpacity + (outerOpacity - innerOpacity) * t;
+
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = (i == rings) ? 1.4 : 1.0
+        ..color = color.withValues(alpha: a);
+
+      final path = Path();
+      for (int k = 0; k < sides; k++) {
+        final ang = startAngle + (2 * math.pi * k / sides);
+        final p = Offset(center.dx + r * math.cos(ang), center.dy + r * math.sin(ang));
+        if (k == 0) {
+          path.moveTo(p.dx, p.dy);
+        } else {
+          path.lineTo(p.dx, p.dy);
+        }
+      }
+      path.close();
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadarGridPainter old) =>
+      old.sides != sides ||
+      old.rings != rings ||
+      old.color != color ||
+      old.outerOpacity != outerOpacity ||
+      old.innerOpacity != innerOpacity;
+}
+
 
 class _MonthGrid extends StatelessWidget {
   final _MonthModel model;

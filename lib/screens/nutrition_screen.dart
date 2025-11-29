@@ -4,8 +4,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:mobile_scanner/mobile_scanner.dart'; 
+import 'package:mobile_scanner/mobile_scanner.dart';
 
+import 'nutrition_analytics_screen.dart'; 
 
 import '/models/meal_model.dart';
 import '/models/saved_meal.dart';
@@ -22,12 +23,22 @@ class NutritionScreen extends ConsumerWidget {
     final initAsync = ref.watch(initMealsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Nutrition')),
+      appBar: AppBar(
+        title: const Text('Nutrition'),
+        actions: [
+          IconButton(
+            tooltip: 'Analytics',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NutritionAnalyticsPage()));
+            }, 
+            icon: const Icon(Icons.show_chart))],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openLogMealSheet(context, ref), 
         icon: const Icon(Icons.add),
         label: const Text('Create meal'),
       ),
+      
       body: initAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text('Init failed: $e')),
@@ -791,6 +802,7 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
           .read(nutritionServiceProvider)
           .getFoodDetailsByBarcode(raw, region: region, language: language);
       
+      if (!mounted) return;
       final picked = await showDialog<_FoodSelection>(
         context: context,
         builder: (_) => _ServingPickerDialog(food: details),
@@ -833,6 +845,7 @@ class _LogMealSheetState extends ConsumerState<_LogMealSheet> {
       lastDate: DateTime(2100),
     ); 
     if (d == null) return null;
+    if (!context.mounted) return null;
     final t = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),

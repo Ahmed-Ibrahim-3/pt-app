@@ -1,4 +1,3 @@
-// lib/home_page.dart (or wherever HomePage lives)
 import 'package:flutter/material.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/nutrition_screen.dart';

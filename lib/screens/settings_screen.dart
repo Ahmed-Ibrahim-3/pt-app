@@ -312,11 +312,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
               ),
 
-              const SizedBox(height: 16),
-              _Section(
-                title: 'Account',
-                child: const Text('Linked email, subscription, sign-out, etc. – coming soon.'),
-              ),
               ListTile(
                 leading: const Icon(Icons.logout),
                 title: const Text('Sign out'),

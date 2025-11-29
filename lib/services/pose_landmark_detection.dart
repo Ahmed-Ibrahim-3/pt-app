@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
+import 'pose_comparison.dart';
+
 class PoseCameraPage extends StatefulWidget {
   const PoseCameraPage({super.key});
 
