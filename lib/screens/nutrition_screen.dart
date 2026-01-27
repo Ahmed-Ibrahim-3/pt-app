@@ -297,29 +297,64 @@ class _MealCard extends StatelessWidget {
 
     List<Widget> maybeItemsFromNotes() {
       if (meal.notes == null || meal.notes!.isEmpty) return const [];
-      try {
-        final parsed = json.decode(meal.notes!) as Map<String, dynamic>;
-        final items = (parsed['items'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
-        if (items.isEmpty) return const [];
-        return [
-          const SizedBox(height: 6),
-          ...items.map((it) => Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Text(
-                      (it['name'] as String?) ?? 'Item',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Text('${(it['grams'] as num?)?.toStringAsFixed(0) ?? '0'} g'),
-                ],
-              )),
-        ];
-      } catch (_) {
-        return const [];
+
+      final selections = _FoodSelection.fromNotes(meal.notes);
+      if (selections.isEmpty) return const [];
+
+      String fmtNum(double n) =>
+          n.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+
+      bool descIs100g(String desc) =>
+          RegExp(r'(^|\s)100\s*g\b', caseSensitive: false).hasMatch(desc);
+
+      String formatQty(_FoodSelection sel) {
+        if (!sel.isServing) {
+          final g = sel.grams ?? 0;
+          return '${fmtNum(g)} g';
+        }
+
+        final desc = (sel.servingDesc ?? '').trim();
+        final count = sel.servingsCount ?? 1.0;
+
+        if (descIs100g(desc)) {
+          final grams = count * 100.0;
+          return '${fmtNum(grams)} g';
+        }
+
+        final match =
+            RegExp(r'^\s*(\d+(?:\.\d+)?)\s+(.+)$').firstMatch(desc);
+        if (match != null) {
+          final baseAmount = double.tryParse(match.group(1)!) ?? 1.0;
+          final unitText = match.group(2)!.trim(); 
+          final totalAmount = baseAmount * count;  
+          return '${fmtNum(totalAmount)} '
+              '${unitText.isEmpty ? "serving" : unitText}';
+        }
+
+        return '${fmtNum(count)} ${desc.isEmpty ? "serving" : desc}';
       }
+
+      return [
+        const SizedBox(height: 6),
+        ...selections.map((sel) {
+          final qty = formatQty(sel);
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  sel.name,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(qty),
+            ],
+          );
+        }),
+      ];
     }
+
+
 
     return Card(
       elevation: 0,
@@ -921,15 +956,27 @@ class _SelectedFoodsList extends StatelessWidget {
       itemBuilder: (context, i) {
         final it = items[i];
 
-        String formatQty(double servingsCount, String servingDesc) {
-          final desc = servingDesc.trim();
-          if (_descIs100g(desc)) {
-            final grams = servingsCount * 100.0;   
-            return '${_fmtNum(grams)} grams';
-          }
-          final unit = desc.replaceFirst(RegExp(r'^\s*1\s+'), '');
-          return '${_fmtNum(servingsCount)} ${unit.isEmpty ? 'serving' : unit}';
+       String formatQty(double servingsCount, String servingDesc) {
+        final desc = servingDesc.trim();
+
+        if (_descIs100g(desc)) {
+          final grams = servingsCount * 100.0;
+          return '${_fmtNum(grams)} g';
         }
+
+        final match =
+            RegExp(r'^\s*(\d+(?:\.\d+)?)\s+(.+)$').firstMatch(desc);
+        if (match != null) {
+          final baseAmount = double.tryParse(match.group(1)!) ?? 1.0;
+          final unitText = match.group(2)!.trim();
+          final totalAmount = baseAmount * servingsCount; 
+          return '${_fmtNum(totalAmount)} '
+              '${unitText.isEmpty ? "serving" : unitText}';
+        }
+
+        return '${_fmtNum(servingsCount)} ${desc.isEmpty ? "serving" : desc}';
+      }
+
 
         final qty = formatQty(it.servingsCount!, it.servingDesc!);
         Text('$qty · ${it.calories.toStringAsFixed(0)} kcal, '

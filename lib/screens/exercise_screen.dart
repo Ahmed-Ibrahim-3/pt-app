@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pt/screens/exercise_scoring.dart';
 
 import '/providers/exercise_provider.dart';
 
 import '/models/workout_plan.dart';
-
-import '/services/pose_landmark_detection.dart';
 
 import 'workout_viewer.dart';
 import 'workout_editor.dart';
@@ -359,7 +358,7 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
               FilledButton.icon(
                 onPressed: () {
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const PoseCameraPage()),
+                    MaterialPageRoute(builder: (_) => const ExerciseScoringCameraPage()),
                   );
                 },
                 icon: const Icon(Icons.hub_outlined),

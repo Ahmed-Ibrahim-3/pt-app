@@ -65,7 +65,6 @@ class PoseAngles {
       return rad * 180.0 / math.pi;
     }
 
-
     double? trunkLeanDeg(PoseLandmark? hip, PoseLandmark? shoulder) {
       if (hip == null || shoulder == null) return null;
       final vx = shoulder.x - hip.x;

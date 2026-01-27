@@ -1,12 +1,9 @@
-// lib/services/pose_landmark_detection.dart
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
-
-import 'pose_comparison.dart';
 
 class PoseCameraPage extends StatefulWidget {
   const PoseCameraPage({super.key});
@@ -17,7 +14,7 @@ class PoseCameraPage extends StatefulWidget {
 
 class _PoseCameraPageState extends State<PoseCameraPage> with WidgetsBindingObserver {
 
-  bool _screenSpaceLabels = true;
+  final bool _screenSpaceLabels = true;
 
   CameraController? _controller;
   List<CameraDescription> _cameras = [];
@@ -347,17 +344,14 @@ class _PosePainter extends CustomPainter {
   };
 
   static const _edges = <List<PoseLandmarkType>>[
-    // torso
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.rightShoulder],
     [PoseLandmarkType.leftHip, PoseLandmarkType.rightHip],
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.leftHip],
     [PoseLandmarkType.rightShoulder, PoseLandmarkType.rightHip],
-    // arms
     [PoseLandmarkType.leftShoulder, PoseLandmarkType.leftElbow],
     [PoseLandmarkType.leftElbow, PoseLandmarkType.leftWrist],
     [PoseLandmarkType.rightShoulder, PoseLandmarkType.rightElbow],
     [PoseLandmarkType.rightElbow, PoseLandmarkType.rightWrist],
-    // legs
     [PoseLandmarkType.leftHip, PoseLandmarkType.leftKnee],
     [PoseLandmarkType.leftKnee, PoseLandmarkType.leftAnkle],
     [PoseLandmarkType.rightHip, PoseLandmarkType.rightKnee],

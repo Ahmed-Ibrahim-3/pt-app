@@ -1,4 +1,5 @@
 {
     "cmake.sourceDirectory": "/Users/ahmed/Documents/pt/pt/linux",
-    "workbench.colorTheme": "Monokai Pro"
+    "workbench.colorTheme": "Monokai Pro",
+    "java.configuration.updateBuildConfiguration": "interactive"
 }

@@ -18,7 +18,7 @@ const String _fsOAuth1Secret = String.fromEnvironment('FS_OAUTH1_CONSUMER_SECRET
 bool get _forceOAuth2 => _fsApiMode.toLowerCase() == 'oauth2';
 bool get _forceOAuth1 => _fsApiMode.toLowerCase() == 'oauth1';
 
-void _log(String msg) => print('[NutritionService] $msg');
+// void _log(String msg) => print('[NutritionService] $msg');
 String _mask(String s, {int show = 6}) => s.isEmpty ? '(empty)' : '${s.substring(0, s.length < show ? s.length : show)}…(${s.length} chars)';
 
 
@@ -74,11 +74,11 @@ class NutritionService {
   _OAuth2Cache? _oauth2; 
 
   NutritionService({http.Client? client}) : _client = client ?? http.Client() {
-    _log('Init  MODE=${_fsApiMode.isEmpty ? "auto" : _fsApiMode}'
-        '  O2_ID=${_mask(_fsOAuth2ClientId)}  O2_SECRET=${_mask(_fsOAuth2ClientSecret)}'
-        '  O2_BEARER=${_mask(_fsOAuth2Bearer)}'
-        '  O1_KEY=${_mask(_fsOAuth1Key)}  O1_SECRET=${_mask(_fsOAuth1Secret)}'
-        '  FETCH_OAUTH2=$_fsDevFetchOAuth2');
+    // _log('Init  MODE=${_fsApiMode.isEmpty ? "auto" : _fsApiMode}'
+    //     '  O2_ID=${_mask(_fsOAuth2ClientId)}  O2_SECRET=${_mask(_fsOAuth2ClientSecret)}'
+    //     '  O2_BEARER=${_mask(_fsOAuth2Bearer)}'
+    //     '  O1_KEY=${_mask(_fsOAuth1Key)}  O1_SECRET=${_mask(_fsOAuth1Secret)}'
+    //     '  FETCH_OAUTH2=$_fsDevFetchOAuth2');
   }
 
   Future<FSFoodDetails> getFoodDetailsByBarcode(
@@ -129,14 +129,14 @@ class NutritionService {
     Map<String, dynamic> data;
 
     if (await _useOAuth2()) {
-      _log('MODE=oauth2  bearer=${_oauth2 != null}  GET /rest/foods/search/v3  q="$q" page=$page max=$max');
+      // _log('MODE=oauth2  bearer=${_oauth2 != null}  GET /rest/foods/search/v3  q="$q" page=$page max=$max');
       data = await _oauth2UrlGet('/foods/search/v3', {
         'search_expression': q,
         'max_results': '$max',
         'page_number': '$page',
       });
     } else {
-      _log('MODE=oauth1  GET method=foods.search.v2 (signed)  q="$q" page=$page max=$max');
+      // _log('MODE=oauth1  GET method=foods.search.v2 (signed)  q="$q" page=$page max=$max');
       data = await _oauth1MethodGet('foods.search.v2', {
         'search_expression': q,
         'max_results': '$max',
@@ -164,9 +164,9 @@ class NutritionService {
 
     try {
       if (await _useOAuth2()) {
-        _log('MODE=oauth2  POST /rest/server.api method=foods.autocomplete expr="$q"');
+        // _log('MODE=oauth2  POST /rest/server.api method=foods.autocomplete expr="$q"');
       } else {
-        _log('MODE=oauth1  GET method=foods.autocomplete expr="$q"');
+        // _log('MODE=oauth1  GET method=foods.autocomplete expr="$q"');
       }
       final data = (await _useOAuth2())
           ? await _oauth2MethodPost('foods.autocomplete', {'expression': q, 'max_results': '$max'})
@@ -186,10 +186,10 @@ class NutritionService {
   Future<FSFoodDetails> getFoodDetails(String foodId) async {
     Map<String, dynamic> data;
     if (await _useOAuth2()) {
-      _log('MODE=oauth2  GET /rest/food/v4 id=$foodId');
+      // _log('MODE=oauth2  GET /rest/food/v4 id=$foodId');
       data = await _oauth2UrlGet('/food/v4', {'food_id': foodId});
     } else {
-      _log('MODE=oauth1  GET method=food.get id=$foodId');
+      // _log('MODE=oauth1  GET method=food.get id=$foodId');
       data = await _oauth1MethodGet('food.get', {'food_id': foodId});
     }
 
@@ -214,7 +214,7 @@ class NutritionService {
 
     if (_forceOAuth2) {
       final ok = await _ensureBearer(strict: true);
-      _log('FORCE oauth2 -> bearer=$ok');
+      // _log('FORCE oauth2 -> bearer=$ok');
       return ok;
     }
 
@@ -238,7 +238,7 @@ class NutritionService {
 
     try {
       final basic = base64Encode(utf8.encode('$_fsOAuth2ClientId:$_fsOAuth2ClientSecret'));
-      _log('Fetching OAuth2 token (client_credentials scope=premier)…');
+      // _log('Fetching OAuth2 token (client_credentials scope=premier)…');
       final resp = await _client.post(
         Uri.parse('https://oauth.fatsecret.com/connect/token'),
         headers: {
@@ -251,7 +251,7 @@ class NutritionService {
 
       final jsonBody = json.decode(resp.body) as Map<String, dynamic>;
       if (resp.statusCode != 200) {
-        _log('OAuth2 token fetch failed: ${resp.statusCode} ${resp.body}');
+        // _log('OAuth2 token fetch failed: ${resp.statusCode} ${resp.body}');
         _oauth2 = null;
         if (strict) throw StateError('OAuth2 token fetch failed (${resp.statusCode})');
         return false;
@@ -260,10 +260,10 @@ class NutritionService {
       final access = '${jsonBody['access_token']}';
       final expiresIn = (jsonBody['expires_in'] ?? 3000) as int;
       _oauth2 = _OAuth2Cache(access, DateTime.now().add(Duration(seconds: expiresIn - 30)));
-      _log('OAuth2 token OK  token=${_mask(access)}  expiresIn=$expiresIn');
+      // _log('OAuth2 token OK  token=${_mask(access)}  expiresIn=$expiresIn');
       return true;
     } catch (e) {
-      _log('OAuth2 token fetch error: $e');
+      // _log('OAuth2 token fetch error: $e');
       _oauth2 = null;
       if (strict) throw StateError('OAuth2 token fetch error: $e');
       return false;
@@ -389,7 +389,7 @@ class NutritionService {
     }
     final err = body['error'];
     if (err is Map) {
-      _log('API ERROR ${err['code']}: ${err['message']} (status=${resp.statusCode})');
+      // _log('API ERROR ${err['code']}: ${err['message']} (status=${resp.statusCode})');
       throw StateError('FatSecret error ${err['code']}: ${err['message']}');
     }
     if (resp.statusCode != 200) {

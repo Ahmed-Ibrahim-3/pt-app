@@ -298,7 +298,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: Theme.of(context).dividerColor.withOpacity(0.6),
+                              color: Theme.of(context).dividerColor.withValues(alpha: 0.6),
                             ),
                           ),
                           child: Center(
@@ -334,7 +334,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             child: Text(
               'Today →',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
             ),
           ),
