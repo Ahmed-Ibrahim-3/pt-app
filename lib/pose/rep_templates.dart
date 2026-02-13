@@ -1,66 +1,38 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'pose_comparison.dart';
 
+class JointTarget {
+  final double start;
+  final double opposite;
+  final double toleranceDeg;
+  final double weight;
+
+  const JointTarget({
+    required this.start,
+    required this.opposite,
+    required this.toleranceDeg,
+    required this.weight,
+  });
+}
+
 class PoseRepTemplate {
   final String exerciseId;
-  final int sampleCount;
-
-  final Map<JointAngleKind, List<double>> jointCurves;
-
-  final Map<JointAngleKind, double> toleranceDeg;
-
-  final Map<JointAngleKind, double> weights;
+  final Map<JointAngleKind, JointTarget> joints;
+  final double symmetryToleranceDeg;
+  final double symmetryWeight;
 
   const PoseRepTemplate({
     required this.exerciseId,
-    required this.sampleCount,
-    required this.jointCurves,
-    required this.toleranceDeg,
-    required this.weights,
+    required this.joints,
+    this.symmetryToleranceDeg = 12,
+    this.symmetryWeight = 0.20,
   });
-
-  Map<String, dynamic> toJson() => {
-        'exerciseId': exerciseId,
-        'sampleCount': sampleCount,
-        'jointCurves': jointCurves.map((k, v) => MapEntry(k.name, v)),
-        'toleranceDeg': toleranceDeg.map((k, v) => MapEntry(k.name, v)),
-        'weights': weights.map((k, v) => MapEntry(k.name, v)),
-      };
-
-  static PoseRepTemplate fromJson(Map<String, dynamic> j) {
-    JointAngleKind kFrom(String s) =>
-        JointAngleKind.values.firstWhere((e) => e.name == s);
-
-    Map<JointAngleKind, List<double>> curvesFrom(dynamic raw) {
-      final m = (raw as Map).cast<String, dynamic>();
-      return m.map((k, v) => MapEntry(kFrom(k), (v as List).cast<num>().map((e) => e.toDouble()).toList()));
-    }
-
-    Map<JointAngleKind, double> mapDouble(dynamic raw) {
-      final m = (raw as Map).cast<String, dynamic>();
-      return m.map((k, v) => MapEntry(kFrom(k), (v as num).toDouble()));
-    }
-
-    return PoseRepTemplate(
-      exerciseId: j['exerciseId'] as String,
-      sampleCount: (j['sampleCount'] as num).toInt(),
-      jointCurves: curvesFrom(j['jointCurves']),
-      toleranceDeg: mapDouble(j['toleranceDeg']),
-      weights: mapDouble(j['weights']),
-    );
-  }
-
-  String toJsonString({bool pretty = false}) =>
-      pretty ? const JsonEncoder.withIndent('  ').convert(toJson()) : jsonEncode(toJson());
 }
 
 class ExerciseDefinition {
   final String id;
-
   final JointAngleKind primaryJoint;
-
   final bool startAtHigh;
 
   final double highEnter;
@@ -69,7 +41,6 @@ class ExerciseDefinition {
   final double lowExit;
 
   final int minRepMs;
-  final int sampleCount;
 
   final PoseRepTemplate template;
 
@@ -82,52 +53,38 @@ class ExerciseDefinition {
     required this.lowEnter,
     required this.lowExit,
     required this.minRepMs,
-    required this.sampleCount,
     required this.template,
   });
 }
 
 class BuiltInExerciseCatalog {
-  static const int _n = 61;
-
   static List<ExerciseDefinition> all() => [
         _squat(),
-        _pushup(),
+        _benchPress(),
         _curl(),
         _shoulderPress(),
-        _hipHinge(),
+        _deadlift(),
       ];
 
-  static ExerciseDefinition byId(String id) =>
-      all().firstWhere((e) => e.id == id);
+  static ExerciseDefinition byId(String id) {
+    final normalized = switch (id) {
+      'pushup' => 'bench_press',
+      'hip_hinge' => 'deadlift',
+      _ => id,
+    };
+    return all().firstWhere((e) => e.id == normalized);
+  }
+
+  static String displayName(String id) => switch (id) {
+        'squat' => 'Squat',
+        'bench_press' => 'Bench Press',
+        'curl' => 'Bicep Curl',
+        'shoulder_press' => 'Shoulder Press',
+        'deadlift' => 'Deadlift',
+        _ => id,
+      };
 
   static ExerciseDefinition _squat() {
-    final tpl = _cosTemplate(
-      exerciseId: 'squat',
-      startHigh: true,
-      jointTargets: {
-        JointAngleKind.leftKnee: (175, 90),
-        JointAngleKind.rightKnee: (175, 90),
-        JointAngleKind.leftHip: (175, 80),
-        JointAngleKind.rightHip: (175, 80),
-        JointAngleKind.trunkLean: (10, 40), 
-      },
-      tolerance: {
-        JointAngleKind.leftKnee: 12,
-        JointAngleKind.rightKnee: 12,
-        JointAngleKind.leftHip: 14,
-        JointAngleKind.rightHip: 14,
-        JointAngleKind.trunkLean: 10,
-      },
-      weights: {
-        JointAngleKind.leftKnee: 1.0,
-        JointAngleKind.rightKnee: 1.0,
-        JointAngleKind.leftHip: 0.9,
-        JointAngleKind.rightHip: 0.9,
-        JointAngleKind.trunkLean: 0.7,
-      },
-    );
-
     return ExerciseDefinition(
       id: 'squat',
       primaryJoint: JointAngleKind.leftKnee,
@@ -137,40 +94,49 @@ class BuiltInExerciseCatalog {
       lowEnter: 105,
       lowExit: 115,
       minRepMs: 600,
-      sampleCount: _n,
-      template: tpl,
+      template: PoseRepTemplate(
+        exerciseId: 'squat',
+        symmetryToleranceDeg: 14,
+        symmetryWeight: 0.20,
+        joints: {
+          JointAngleKind.leftKnee: const JointTarget(
+            start: 175,
+            opposite: 90,
+            toleranceDeg: 14,
+            weight: 1.0,
+          ),
+          JointAngleKind.rightKnee: const JointTarget(
+            start: 175,
+            opposite: 90,
+            toleranceDeg: 14,
+            weight: 1.0,
+          ),
+          JointAngleKind.leftHip: const JointTarget(
+            start: 175,
+            opposite: 80,
+            toleranceDeg: 16,
+            weight: 0.9,
+          ),
+          JointAngleKind.rightHip: const JointTarget(
+            start: 175,
+            opposite: 80,
+            toleranceDeg: 16,
+            weight: 0.9,
+          ),
+          JointAngleKind.trunkLean: const JointTarget(
+            start: 10,
+            opposite: 40,
+            toleranceDeg: 12,
+            weight: 0.7,
+          ),
+        },
+      ),
     );
   }
 
-  static ExerciseDefinition _pushup() {
-    final tpl = _cosTemplate(
-      exerciseId: 'pushup',
-      startHigh: true,
-      jointTargets: {
-        JointAngleKind.leftElbow: (175, 90),
-        JointAngleKind.rightElbow: (175, 90),
-        JointAngleKind.leftHip: (175, 165),
-        JointAngleKind.rightHip: (175, 165),
-        JointAngleKind.trunkLean: (5, 10),
-      },
-      tolerance: {
-        JointAngleKind.leftElbow: 14,
-        JointAngleKind.rightElbow: 14,
-        JointAngleKind.leftHip: 10,
-        JointAngleKind.rightHip: 10,
-        JointAngleKind.trunkLean: 8,
-      },
-      weights: {
-        JointAngleKind.leftElbow: 1.0,
-        JointAngleKind.rightElbow: 1.0,
-        JointAngleKind.leftHip: 0.7,
-        JointAngleKind.rightHip: 0.7,
-        JointAngleKind.trunkLean: 0.6,
-      },
-    );
-
+  static ExerciseDefinition _benchPress() {
     return ExerciseDefinition(
-      id: 'pushup',
+      id: 'bench_press',
       primaryJoint: JointAngleKind.leftElbow,
       startAtHigh: true,
       highEnter: 155,
@@ -178,35 +144,29 @@ class BuiltInExerciseCatalog {
       lowEnter: 105,
       lowExit: 115,
       minRepMs: 500,
-      sampleCount: _n,
-      template: tpl,
+      template: PoseRepTemplate(
+        exerciseId: 'bench_press',
+        symmetryToleranceDeg: 14,
+        symmetryWeight: 0.18,
+        joints: {
+          JointAngleKind.leftElbow: const JointTarget(
+            start: 175,
+            opposite: 90,
+            toleranceDeg: 16,
+            weight: 1.0,
+          ),
+          JointAngleKind.rightElbow: const JointTarget(
+            start: 175,
+            opposite: 90,
+            toleranceDeg: 16,
+            weight: 1.0,
+          ),
+        },
+      ),
     );
   }
 
   static ExerciseDefinition _curl() {
-    final tpl = _cosTemplate(
-      exerciseId: 'curl',
-      startHigh: true, 
-      jointTargets: {
-        JointAngleKind.leftElbow: (175, 55),
-        JointAngleKind.rightElbow: (175, 55),
-        JointAngleKind.leftShoulder: (25, 40), 
-        JointAngleKind.rightShoulder: (25, 40),
-      },
-      tolerance: {
-        JointAngleKind.leftElbow: 16,
-        JointAngleKind.rightElbow: 16,
-        JointAngleKind.leftShoulder: 18,
-        JointAngleKind.rightShoulder: 18,
-      },
-      weights: {
-        JointAngleKind.leftElbow: 1.0,
-        JointAngleKind.rightElbow: 1.0,
-        JointAngleKind.leftShoulder: 0.4,
-        JointAngleKind.rightShoulder: 0.4,
-      },
-    );
-
     return ExerciseDefinition(
       id: 'curl',
       primaryJoint: JointAngleKind.leftElbow,
@@ -216,38 +176,41 @@ class BuiltInExerciseCatalog {
       lowEnter: 75,
       lowExit: 85,
       minRepMs: 450,
-      sampleCount: _n,
-      template: tpl,
+      template: PoseRepTemplate(
+        exerciseId: 'curl',
+        symmetryToleranceDeg: 16,
+        symmetryWeight: 0.15,
+        joints: {
+          JointAngleKind.leftElbow: const JointTarget(
+            start: 175,
+            opposite: 55,
+            toleranceDeg: 18,
+            weight: 1.0,
+          ),
+          JointAngleKind.rightElbow: const JointTarget(
+            start: 175,
+            opposite: 55,
+            toleranceDeg: 18,
+            weight: 1.0,
+          ),
+          JointAngleKind.leftShoulder: const JointTarget(
+            start: 25,
+            opposite: 40,
+            toleranceDeg: 20,
+            weight: 0.45,
+          ),
+          JointAngleKind.rightShoulder: const JointTarget(
+            start: 25,
+            opposite: 40,
+            toleranceDeg: 20,
+            weight: 0.45,
+          ),
+        },
+      ),
     );
   }
 
   static ExerciseDefinition _shoulderPress() {
-    final tpl = _cosTemplate(
-      exerciseId: 'shoulder_press',
-      startHigh: false,
-      jointTargets: {
-        JointAngleKind.leftElbow: (95, 170),
-        JointAngleKind.rightElbow: (95, 170),
-        JointAngleKind.leftShoulder: (70, 130),
-        JointAngleKind.rightShoulder: (70, 130),
-        JointAngleKind.trunkLean: (5, 15),
-      },
-      tolerance: {
-        JointAngleKind.leftElbow: 16,
-        JointAngleKind.rightElbow: 16,
-        JointAngleKind.leftShoulder: 18,
-        JointAngleKind.rightShoulder: 18,
-        JointAngleKind.trunkLean: 10,
-      },
-      weights: {
-        JointAngleKind.leftElbow: 1.0,
-        JointAngleKind.rightElbow: 1.0,
-        JointAngleKind.leftShoulder: 0.8,
-        JointAngleKind.rightShoulder: 0.8,
-        JointAngleKind.trunkLean: 0.6,
-      },
-    );
-
     return ExerciseDefinition(
       id: 'shoulder_press',
       primaryJoint: JointAngleKind.leftElbow,
@@ -257,40 +220,49 @@ class BuiltInExerciseCatalog {
       lowEnter: 110,
       lowExit: 120,
       minRepMs: 600,
-      sampleCount: _n,
-      template: tpl,
+      template: PoseRepTemplate(
+        exerciseId: 'shoulder_press',
+        symmetryToleranceDeg: 16,
+        symmetryWeight: 0.18,
+        joints: {
+          JointAngleKind.leftElbow: const JointTarget(
+            start: 95,
+            opposite: 170,
+            toleranceDeg: 18,
+            weight: 1.0,
+          ),
+          JointAngleKind.rightElbow: const JointTarget(
+            start: 95,
+            opposite: 170,
+            toleranceDeg: 18,
+            weight: 1.0,
+          ),
+          JointAngleKind.leftShoulder: const JointTarget(
+            start: 70,
+            opposite: 130,
+            toleranceDeg: 20,
+            weight: 0.8,
+          ),
+          JointAngleKind.rightShoulder: const JointTarget(
+            start: 70,
+            opposite: 130,
+            toleranceDeg: 20,
+            weight: 0.8,
+          ),
+          JointAngleKind.trunkLean: const JointTarget(
+            start: 5,
+            opposite: 15,
+            toleranceDeg: 12,
+            weight: 0.6,
+          ),
+        },
+      ),
     );
   }
 
-  static ExerciseDefinition _hipHinge() {
-    final tpl = _cosTemplate(
-      exerciseId: 'hip_hinge',
-      startHigh: true,
-      jointTargets: {
-        JointAngleKind.leftHip: (175, 85),
-        JointAngleKind.rightHip: (175, 85),
-        JointAngleKind.leftKnee: (170, 150),
-        JointAngleKind.rightKnee: (170, 150),
-        JointAngleKind.trunkLean: (10, 60),
-      },
-      tolerance: {
-        JointAngleKind.leftHip: 16,
-        JointAngleKind.rightHip: 16,
-        JointAngleKind.leftKnee: 14,
-        JointAngleKind.rightKnee: 14,
-        JointAngleKind.trunkLean: 14,
-      },
-      weights: {
-        JointAngleKind.leftHip: 1.0,
-        JointAngleKind.rightHip: 1.0,
-        JointAngleKind.leftKnee: 0.6,
-        JointAngleKind.rightKnee: 0.6,
-        JointAngleKind.trunkLean: 0.8,
-      },
-    );
-
+  static ExerciseDefinition _deadlift() {
     return ExerciseDefinition(
-      id: 'hip_hinge',
+      id: 'deadlift',
       primaryJoint: JointAngleKind.leftHip,
       startAtHigh: true,
       highEnter: 155,
@@ -298,39 +270,43 @@ class BuiltInExerciseCatalog {
       lowEnter: 110,
       lowExit: 120,
       minRepMs: 650,
-      sampleCount: _n,
-      template: tpl,
-    );
-  }
-
-  static PoseRepTemplate _cosTemplate({
-    required String exerciseId,
-    required bool startHigh,
-    required Map<JointAngleKind, (double high, double low)> jointTargets,
-    required Map<JointAngleKind, double> tolerance,
-    required Map<JointAngleKind, double> weights,
-  }) {
-    final curves = <JointAngleKind, List<double>>{};
-
-    for (final e in jointTargets.entries) {
-      final high = e.value.$1;
-      final low = e.value.$2;
-      final mid = (high + low) / 2.0;
-      final amp = (high - low).abs() / 2.0;
-
-      curves[e.key] = List.generate(_n, (i) {
-        final p = i / (_n - 1);
-        final c = math.cos(2 * math.pi * p); 
-        return startHigh ? (mid + amp * c) : (mid - amp * c);
-      });
-    }
-
-    return PoseRepTemplate(
-      exerciseId: exerciseId,
-      sampleCount: _n,
-      jointCurves: curves,
-      toleranceDeg: tolerance,
-      weights: weights,
+      template: PoseRepTemplate(
+        exerciseId: 'deadlift',
+        symmetryToleranceDeg: 16,
+        symmetryWeight: 0.18,
+        joints: {
+          JointAngleKind.leftHip: const JointTarget(
+            start: 175,
+            opposite: 85,
+            toleranceDeg: 18,
+            weight: 1.0,
+          ),
+          JointAngleKind.rightHip: const JointTarget(
+            start: 175,
+            opposite: 85,
+            toleranceDeg: 18,
+            weight: 1.0,
+          ),
+          JointAngleKind.leftKnee: const JointTarget(
+            start: 170,
+            opposite: 150,
+            toleranceDeg: 16,
+            weight: 0.6,
+          ),
+          JointAngleKind.rightKnee: const JointTarget(
+            start: 170,
+            opposite: 150,
+            toleranceDeg: 16,
+            weight: 0.6,
+          ),
+          JointAngleKind.trunkLean: const JointTarget(
+            start: 10,
+            opposite: 60,
+            toleranceDeg: 16,
+            weight: 0.8,
+          ),
+        },
+      ),
     );
   }
 }

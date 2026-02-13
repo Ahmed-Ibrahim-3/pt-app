@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import '/pose/pose_comparison.dart';
 import '/pose/rep_analyser.dart';
 import '/pose/rep_scoring.dart';
 import '/pose/rep_templates.dart';
+import '/pose/rep_feedback.dart';
 
 class ExerciseScoringCameraPage extends StatefulWidget {
   const ExerciseScoringCameraPage({super.key});
@@ -23,6 +25,8 @@ class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
   CameraController? _controller;
   List<CameraDescription> _cameras = [];
   int _cameraIndex = 0;
+  List<RepFeedback> _feedbackHistory = [];
+  RepFeedback? _lastFeedback;
 
   late final PoseDetector _poseDetector;
 
@@ -141,13 +145,61 @@ class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
   }
 
   void _toggleRecording() {
-    setState(() {
-      _recording = !_recording;
+  final wasRecording = _recording;
+
+  setState(() {
+    _recording = !_recording;
+
+    if (!wasRecording) {
       _repAnalyser.reset();
       _repCount = 0;
       _lastScore = null;
-    });
+      _lastFeedback = null;
+      _feedbackHistory = [];
+    }
+  });
+
+  if (wasRecording) {
+    _showSetSummary();
   }
+}
+
+Future<void> _showSetSummary() async {
+  if (!mounted) return;
+  if (_feedbackHistory.isEmpty) return;
+
+  final items = RepFeedbackGenerator.summariseSet(
+    _feedbackHistory,
+    _exercise,
+    maxItems: 5,
+  );
+
+  await showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Set feedback',
+              style: Theme.of(ctx).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 12),
+            ...items.map((m) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('• $m'),
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   void _processCameraImage(CameraImage image) async {
     if (_isBusy || _controller == null) return;
@@ -174,18 +226,22 @@ class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
 
       CapturedRep? rep;
       if (_recording) {
-        rep = _repAnalyser.addSample(PoseAngleSample(tMs: now, angles: angles));
+        rep = _repAnalyser.addAngles(now, angles);
       }
 
       if (rep != null) {
-        final score = RepScorer.scoreRep(rep, _exercise.template);
+        final score = RepScorer.scoreRep(rep, _exercise);
+        final feedback = RepFeedbackGenerator.generate(rep, _exercise);
         setState(() {
           _pose = pose;
           _latestAngles = angles;
           _repCount += 1;
           _lastScore = score;
+          _lastFeedback = feedback;
+          _feedbackHistory.add(feedback);
         });
-      } else {
+      }
+      else {
         setState(() {
           _pose = pose;
           _latestAngles = angles;
@@ -219,8 +275,6 @@ class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
     if (rotation == null) return null;
     _lastRotation = rotation;
 
-    // Update painter imageSize in the SAME coordinate orientation we’ll draw.
-    // If the image is rotated 90/270 relative to display, swap w/h.
     final isQuarterTurn = rotation == InputImageRotation.rotation90deg ||
         rotation == InputImageRotation.rotation270deg;
     _imageSize = isQuarterTurn
@@ -333,7 +387,7 @@ class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
               value: _exercise.id,
               onChanged: (v) => v == null ? null : _selectExercise(v),
               items: BuiltInExerciseCatalog.all()
-                  .map((e) => DropdownMenuItem(value: e.id, child: Text(e.id)))
+                  .map((e) => DropdownMenuItem(value: e.id, child: Text(BuiltInExerciseCatalog.displayName(e.id))))
                   .toList(),
             ),
           ),
@@ -367,6 +421,7 @@ class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
                     repCount: _repCount,
                     score: _lastScore,
                     onToggleRecording: _toggleRecording,
+                    feedback: _lastFeedback,
                   ),
                 ),
 
@@ -447,6 +502,7 @@ class _Hud extends StatelessWidget {
   final int repCount;
   final RepScore? score;
   final VoidCallback onToggleRecording;
+  final RepFeedback? feedback;
 
   const _Hud({
     required this.recording,
@@ -454,7 +510,8 @@ class _Hud extends StatelessWidget {
     required this.repCount,
     required this.score,
     required this.onToggleRecording,
-  });
+    required this.feedback,
+    });
 
   @override
   Widget build(BuildContext context) {
@@ -505,6 +562,12 @@ class _Hud extends StatelessWidget {
                     return Text('${e.key.name}: ${e.value.toStringAsFixed(0)}%');
                   }).toList(),
                 ),
+                if (feedback != null && feedback!.cues.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  const Text('Next rep focus:', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 6),
+                  ...feedback!.cues.map((c) => Text('• ${c.message}')),
+                ],
               ],
             ],
           ),
@@ -528,15 +591,18 @@ class _AngleDebugBar extends StatelessWidget {
     final a = latestAngles;
     if (a == null) return const SizedBox.shrink();
 
-    final joints = exercise.template.jointCurves.keys.toList();
+    final joints = exercise.template.joints.keys.toList();
     final show = joints.take(6).toList();
 
     String line(JointAngleKind j) {
-      final curve = exercise.template.jointCurves[j]!;
-      final minV = curve.reduce((x, y) => x < y ? x : y);
-      final maxV = curve.reduce((x, y) => x > y ? x : y);
+      final spec = exercise.template.joints[j]!;
+      final minV = math.min(spec.start, spec.opposite);
+      final maxV = math.max(spec.start, spec.opposite);
       final cur = a[j];
-      return '${j.name}: ${cur?.toStringAsFixed(0) ?? "—"}°   (tpl ${minV.toStringAsFixed(0)}–${maxV.toStringAsFixed(0)}°)';
+
+      return '${j.name}: ${cur?.toStringAsFixed(0) ?? "—"}°   '
+          '(tpl ${minV.toStringAsFixed(0)}–${maxV.toStringAsFixed(0)}°, '
+          'tol ±${spec.toleranceDeg.toStringAsFixed(0)}°)';
     }
 
     return DecoratedBox(
@@ -565,6 +631,8 @@ class _AngleDebugBar extends StatelessWidget {
     );
   }
 }
+
+
 
 class _PosePainter extends CustomPainter {
   _PosePainter({

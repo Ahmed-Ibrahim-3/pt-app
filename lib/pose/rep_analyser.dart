@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import 'angle_filters.dart';
 import 'pose_comparison.dart';
 import 'rep_templates.dart';
 
@@ -33,12 +34,19 @@ class RepAnalyser {
   final Queue<PoseAngleSample> _buffer = Queue();
   final int _bufferWindowMs;
 
+  final AngleFilterBank _filterBank;
+
   _RepPhase _phase = _RepPhase.idle;
   bool _armed = false;
   int? _repStartMs;
   bool _hitOppositeExtreme = false;
 
-  RepAnalyser(this.def, {int bufferWindowMs = 15000}) : _bufferWindowMs = bufferWindowMs;
+  RepAnalyser(
+    this.def, {
+    int bufferWindowMs = 15000,
+    AngleFilterBank? filterBank,
+  })  : _bufferWindowMs = bufferWindowMs,
+        _filterBank = filterBank ?? AngleFilterBank();
 
   void reset() {
     _buffer.clear();
@@ -48,16 +56,20 @@ class RepAnalyser {
     _hitOppositeExtreme = false;
   }
 
-  CapturedRep? addSample(PoseAngleSample s) {
+  CapturedRep? addAngles(int tMs, Map<JointAngleKind, double> rawAngles) {
+    final filtered = _filterBank.filterAngles(tMs, rawAngles);
+
+    final s = PoseAngleSample(tMs: tMs, angles: filtered);
     _buffer.addLast(s);
-    while (_buffer.isNotEmpty && (s.tMs - _buffer.first.tMs) > _bufferWindowMs) {
+
+    while (_buffer.isNotEmpty && (tMs - _buffer.first.tMs) > _bufferWindowMs) {
       _buffer.removeFirst();
     }
 
-    final a = _primaryAngleWithFallback(s.angles);
+    final a = _primaryAngleWithFallback(filtered);
     if (a == null) return null;
 
-    return def.startAtHigh ? _updateStartAtHigh(a, s.tMs) : _updateStartAtLow(a, s.tMs);
+    return def.startAtHigh ? _updateStartAtHigh(a, tMs) : _updateStartAtLow(a, tMs);
   }
 
   double? _primaryAngleWithFallback(Map<JointAngleKind, double> angles) {
@@ -121,7 +133,8 @@ class RepAnalyser {
 
           if ((end - start) < def.minRepMs) return null;
 
-          final repSamples = _buffer.where((x) => x.tMs >= start && x.tMs <= end).toList();
+          final repSamples =
+              _buffer.where((x) => x.tMs >= start && x.tMs <= end).toList();
           return CapturedRep(
             exerciseId: def.id,
             startMs: start,
@@ -169,7 +182,8 @@ class RepAnalyser {
 
           if ((end - start) < def.minRepMs) return null;
 
-          final repSamples = _buffer.where((x) => x.tMs >= start && x.tMs <= end).toList();
+          final repSamples =
+              _buffer.where((x) => x.tMs >= start && x.tMs <= end).toList();
           return CapturedRep(
             exerciseId: def.id,
             startMs: start,
