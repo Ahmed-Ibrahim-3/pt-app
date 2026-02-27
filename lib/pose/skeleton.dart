@@ -6,6 +6,7 @@ import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 import 'pose_comparison.dart';
+import 'coordinate_translator.dart';
 
 class PoseSkeletonPainter extends CustomPainter {
   final Pose pose;
@@ -140,37 +141,14 @@ class PoseSkeletonPainter extends CustomPainter {
   }
 
   Offset _toCanvas(Offset p, Size canvasSize) {
-    double x = p.dx;
-    double y = p.dy;
-
-    double cx;
-    double cy;
-
-    switch (rotation) {
-      case InputImageRotation.rotation90deg:
-        cx = x * canvasSize.width / imageSize.height;
-        cy = y * canvasSize.height / imageSize.width;
-        break;
-      case InputImageRotation.rotation270deg:
-        cx = canvasSize.width - (x * canvasSize.width / imageSize.height);
-        cy = y * canvasSize.height / imageSize.width;
-        break;
-      case InputImageRotation.rotation180deg:
-        cx = canvasSize.width - (x * canvasSize.width / imageSize.width);
-        cy = canvasSize.height - (y * canvasSize.height / imageSize.height);
-        break;
-      case InputImageRotation.rotation0deg:
-        cx = x * canvasSize.width / imageSize.width;
-        cy = y * canvasSize.height / imageSize.height;
-        break;
-    }
-
-    if (lensDirection == CameraLensDirection.front) {
-      cx = canvasSize.width - cx;
-    }
-
-    return Offset(cx, cy);
-  }
+    return translatePosePoint(
+      p,
+      canvasSize,
+      imageSize,
+      rotation,
+      lensDirection,
+    );
+}
 
   @override
   bool shouldRepaint(covariant PoseSkeletonPainter oldDelegate) {

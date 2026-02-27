@@ -214,24 +214,11 @@ class RepFeedbackGenerator {
     RepPhaseBucket phase,
     double deltaDeg,
   ) {
-    final where = _phaseLabel(def, phase);
-    final amt = _degText(deltaDeg);
-
     if (joint == JointAngleKind.leftElbow || joint == JointAngleKind.rightElbow) {
-      if (deltaDeg > 0) {
-        if (phase == RepPhaseBucket.opposite) {
-          return '$where, lower the bar a bit more — bend your elbows $amt.';
-        }
-        return '$where, add more elbow bend — bend your elbows $amt.';
-      } else {
-        if (phase == RepPhaseBucket.start) {
-          return '$where, finish the rep — straighten your elbows $amt (full lockout).';
-        }
-        return '$where, press a bit more — straighten your elbows $amt.';
-      }
+      final hint = deltaDeg > 0 ? 'bend a little more' : 'straighten a little more';
+      return _deltaAngleCue(def, joint, phase, deltaDeg, hint: hint);
     }
-
-    return _genericCue(def, joint, phase, deltaDeg);
+    return _deltaAngleCue(def, joint, phase, deltaDeg);
   }
 
   static String _deadliftCue(
@@ -240,32 +227,26 @@ class RepFeedbackGenerator {
     RepPhaseBucket phase,
     double deltaDeg,
   ) {
-    final where = _phaseLabel(def, phase);
-    final amt = _degText(deltaDeg);
-
     switch (joint) {
       case JointAngleKind.leftHip:
       case JointAngleKind.rightHip:
-        if (deltaDeg > 0) {
-          return '$where, hinge deeper — push your hips back $amt.';
-        }
-        return '$where, stand taller — drive your hips through $amt.';
-
+        return _deltaAngleCue(
+          def, joint, phase, deltaDeg,
+          hint: deltaDeg > 0 ? 'hinge a bit deeper' : 'stand a bit taller',
+        );
       case JointAngleKind.leftKnee:
       case JointAngleKind.rightKnee:
-        if (deltaDeg > 0) {
-          return '$where, add a bit more knee bend $amt (don’t turn it into a stiff-leg).';
-        }
-        return '$where, keep your knees back $amt — make it more “hips back” than “squat down”.';
-
+        return _deltaAngleCue(
+          def, joint, phase, deltaDeg,
+          hint: deltaDeg > 0 ? 'more knee bend' : 'less knee bend',
+        );
       case JointAngleKind.trunkLean:
-        if (deltaDeg > 0) {
-          return '$where, keep your chest up and brace — reduce the forward lean $amt.';
-        }
-        return '$where, hinge a bit more — let your torso come forward $amt while keeping your back neutral.';
-
+        return _deltaAngleCue(
+          def, joint, phase, deltaDeg,
+          hint: deltaDeg > 0 ? 'stay more upright' : 'hinge a touch more',
+        );
       default:
-        return _genericCue(def, joint, phase, deltaDeg);
+        return _deltaAngleCue(def, joint, phase, deltaDeg);
     }
   }
 
@@ -275,32 +256,26 @@ class RepFeedbackGenerator {
     RepPhaseBucket phase,
     double deltaDeg,
   ) {
-    final where = _phaseLabel(def, phase);
-    final amt = _degText(deltaDeg);
-
     switch (joint) {
       case JointAngleKind.leftKnee:
       case JointAngleKind.rightKnee:
-        if (deltaDeg > 0) {
-          return '$where, go a bit deeper — bend your knees $amt.';
-        }
-        return '$where, stand fully tall — straighten your knees $amt.';
-
+        return _deltaAngleCue(
+          def, joint, phase, deltaDeg,
+          hint: deltaDeg > 0 ? 'go a bit deeper' : 'stand fully tall',
+        );
       case JointAngleKind.leftHip:
       case JointAngleKind.rightHip:
-        if (deltaDeg > 0) {
-          return '$where, sit back and down more — increase hip bend $amt.';
-        }
-        return '$where, finish the rep — extend your hips $amt.';
-
+        return _deltaAngleCue(
+          def, joint, phase, deltaDeg,
+          hint: deltaDeg > 0 ? 'sit back and down a bit more' : 'finish the rep',
+        );
       case JointAngleKind.trunkLean:
-        if (deltaDeg > 0) {
-          return '$where, keep your chest up — reduce forward lean $amt.';
-        }
-        return '$where, allow a touch more hinge — let your torso come forward $amt (stay braced).';
-
+        return _deltaAngleCue(
+          def, joint, phase, deltaDeg,
+          hint: deltaDeg > 0 ? 'keep your chest up' : 'a touch more hinge',
+        );
       default:
-        return _genericCue(def, joint, phase, deltaDeg);
+        return _deltaAngleCue(def, joint, phase, deltaDeg);
     }
   }
 
@@ -310,21 +285,7 @@ class RepFeedbackGenerator {
     RepPhaseBucket phase,
     double deltaDeg,
   ) {
-    final where = _phaseLabel(def, phase);
-    final part = _jointLabel(joint);
-    final act = _jointAction(joint, deltaDeg);
-    final amt = _degText(deltaDeg);
-
-    if (joint == JointAngleKind.trunkLean) {
-      return '$where, $act $amt.';
-    }
-    if (joint == JointAngleKind.leftHip || joint == JointAngleKind.rightHip) {
-      return '$where, $act $amt.';
-    }
-    if (joint == JointAngleKind.leftShoulder || joint == JointAngleKind.rightShoulder) {
-      return '$where, $act $part $amt.';
-    }
-    return '$where, $act $part $amt.';
+    return _deltaAngleCue(def, joint, phase, deltaDeg);
   }
 
 
@@ -345,31 +306,48 @@ class RepFeedbackGenerator {
     }
   }
 
-  static String _degText(double deg) {
-    final v = deg.abs();
-    final rounded = math.max(2, (v / 2.0).round() * 2);
-    return 'by about ${rounded}°';
-  }
+    static String _degText(double deg) {
+      final v = deg.abs();
+      final rounded = math.max(2, (v / 2.0).round() * 2);
+      return 'by about ${rounded}°';
+    }
 
-  static String _jointLabel(JointAngleKind j) {
+    static String _deltaAngleCue(
+      ExerciseDefinition def,
+      JointAngleKind joint,
+      RepPhaseBucket phase,
+      double deltaDeg, {
+      String? hint,
+    }) {
+      final where = _phaseLabel(def, phase);
+      final dir = deltaDeg > 0 ? 'decrease' : 'increase';
+      final amt = _degText(deltaDeg); // "by about 12°"
+      final label = _jointAngleLabel(joint); // "left elbow angle"
+      final base = '$where, $dir your $label $amt';
+      if (hint == null || hint.trim().isEmpty) return '$base.';
+      return '$base — $hint.';
+    }
+
+  static String _jointAngleLabel(JointAngleKind j) {
     switch (j) {
       case JointAngleKind.leftElbow:
-        return 'your left elbow';
+        return 'left elbow angle';
       case JointAngleKind.rightElbow:
-        return 'your right elbow';
+        return 'right elbow angle';
       case JointAngleKind.leftKnee:
-        return 'your left knee';
+        return 'left knee angle';
       case JointAngleKind.rightKnee:
-        return 'your right knee';
+        return 'right knee angle';
       case JointAngleKind.leftHip:
+        return 'left hip angle';
       case JointAngleKind.rightHip:
-        return 'your hips';
+        return 'right hip angle';
       case JointAngleKind.leftShoulder:
-        return 'your left upper arm';
+        return 'left shoulder angle';
       case JointAngleKind.rightShoulder:
-        return 'your right upper arm';
+        return 'right shoulder angle';
       case JointAngleKind.trunkLean:
-        return 'your torso';
+        return 'torso lean angle';
     }
   }
 
@@ -407,12 +385,12 @@ class RepFeedbackGenerator {
 
     final delta = def.startAtHigh ? (oppObs - targetOpp) : (targetOpp - oppObs);
     if (delta <= 6.0) return null;
+    final deltaSigned = oppObs - targetOpp;
+    final deltaAbs = deltaSigned.abs();
+    if (deltaAbs <= 6.0) return null;
 
     final phase = RepPhaseBucket.opposite;
-    final where = _phaseLabel(def, phase);
-    final amt = _degText(delta);
-
-    final msg = '$where, aim for a bit more range of motion $amt.';
+    final msg = _deltaAngleCue(def, def.primaryJoint, phase, deltaSigned, hint: 'more range of motion');
     return FeedbackCue(
       id: 'metric:rom:${def.id}:${def.primaryJoint.name}',
       message: msg,
@@ -436,12 +414,12 @@ class RepFeedbackGenerator {
 
     final delta = def.startAtHigh ? (targetStart - startObs) : (startObs - targetStart);
     if (delta <= 6.0) return null;
+    final deltaSigned = startObs - targetStart;
+    final deltaAbs = deltaSigned.abs();
+    if (deltaAbs <= 6.0) return null;
 
     final phase = RepPhaseBucket.start;
-    final where = _phaseLabel(def, phase);
-    final amt = _degText(delta);
-
-    final msg = '$where, complete the lockout $amt.';
+    final msg = _deltaAngleCue(def, def.primaryJoint, phase, deltaSigned, hint: 'full lockout');
     return FeedbackCue(
       id: 'metric:lockout:${def.id}:${def.primaryJoint.name}',
       message: msg,

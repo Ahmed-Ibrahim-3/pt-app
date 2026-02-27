@@ -34,7 +34,7 @@ class _PlanEditorPageState extends ConsumerState<PlanEditorPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.existing == null ? 'New Workout' : 'Edit Plan'),
+        title: Text(widget.existing == null ? 'New Workout' : 'Edit Workout'),
         actions: [
           TextButton(
             onPressed: () async {
@@ -70,7 +70,7 @@ class _PlanEditorPageState extends ConsumerState<PlanEditorPage> {
             child: TextField(
               controller: _nameCtrl,
               decoration: const InputDecoration(
-                labelText: 'Plan name (e.g., Leg Day A)',
+                labelText: 'Name (e.g., Leg Day A)',
                 prefixIcon: Icon(Icons.badge),
                 border: OutlineInputBorder(),
               ),

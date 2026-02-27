@@ -36,17 +36,34 @@ class RepAnalyser {
 
   final AngleFilterBank _filterBank;
 
+  /// Extra smoothing on the primary rep-counting signal (after per-joint
+  /// filtering).
+  ///
+  /// When a joint gets occluded, the analyser may fall back to the opposite
+  /// side (e.g. left elbow -> right elbow). Those side-to-side swaps can create
+  /// sudden jumps that look like threshold crossings, which can lead to “half
+  /// rep” counts. This filter stabilises the combined signal.
+  late OneEuroFilter _primaryFilter;
+
   _RepPhase _phase = _RepPhase.idle;
   bool _armed = false;
   int? _repStartMs;
   bool _hitOppositeExtreme = false;
+
+  // Debounce for noisy threshold crossings at the extremes.
+  static const int _extremeHoldMs = 140;
+  static const double _resetHysteresisDeg = 3.0;
+  int? _lowHoldSinceMs;
+  int? _highHoldSinceMs;
 
   RepAnalyser(
     this.def, {
     int bufferWindowMs = 15000,
     AngleFilterBank? filterBank,
   })  : _bufferWindowMs = bufferWindowMs,
-        _filterBank = filterBank ?? AngleFilterBank();
+        _filterBank = filterBank ?? AngleFilterBank() {
+    _primaryFilter = OneEuroFilter();
+  }
 
   void reset() {
     _buffer.clear();
@@ -54,6 +71,9 @@ class RepAnalyser {
     _armed = false;
     _repStartMs = null;
     _hitOppositeExtreme = false;
+    _lowHoldSinceMs = null;
+    _highHoldSinceMs = null;
+    _primaryFilter = OneEuroFilter();
   }
 
   CapturedRep? addAngles(int tMs, Map<JointAngleKind, double> rawAngles) {
@@ -66,36 +86,77 @@ class RepAnalyser {
       _buffer.removeFirst();
     }
 
-    final a = _primaryAngleWithFallback(filtered);
-    if (a == null) return null;
+    final aRaw = _primaryAngleWithFallback(filtered);
+    if (aRaw == null) return null;
+
+    // Smooth the combined primary signal (helps with left/right swapping).
+    final a = _primaryFilter.filter(tMs / 1000.0, aRaw);
 
     return def.startAtHigh ? _updateStartAtHigh(a, tMs) : _updateStartAtLow(a, tMs);
   }
 
   double? _primaryAngleWithFallback(Map<JointAngleKind, double> angles) {
-    final primary = angles[def.primaryJoint];
-    if (primary != null) return primary;
-
+    // Prefer a stable signal:
+    // - If we have both left/right for the same joint, use the mean.
+    // - Otherwise use whichever side we have.
+    JointAngleKind? other;
     switch (def.primaryJoint) {
       case JointAngleKind.leftKnee:
-        return angles[JointAngleKind.rightKnee];
+        other = JointAngleKind.rightKnee;
+        break;
       case JointAngleKind.rightKnee:
-        return angles[JointAngleKind.leftKnee];
+        other = JointAngleKind.leftKnee;
+        break;
       case JointAngleKind.leftElbow:
-        return angles[JointAngleKind.rightElbow];
+        other = JointAngleKind.rightElbow;
+        break;
       case JointAngleKind.rightElbow:
-        return angles[JointAngleKind.leftElbow];
+        other = JointAngleKind.leftElbow;
+        break;
       case JointAngleKind.leftHip:
-        return angles[JointAngleKind.rightHip];
+        other = JointAngleKind.rightHip;
+        break;
       case JointAngleKind.rightHip:
-        return angles[JointAngleKind.leftHip];
+        other = JointAngleKind.leftHip;
+        break;
       case JointAngleKind.leftShoulder:
-        return angles[JointAngleKind.rightShoulder];
+        other = JointAngleKind.rightShoulder;
+        break;
       case JointAngleKind.rightShoulder:
-        return angles[JointAngleKind.leftShoulder];
+        other = JointAngleKind.leftShoulder;
+        break;
       case JointAngleKind.trunkLean:
-        return angles[JointAngleKind.trunkLean];
+        other = null;
+        break;
     }
+
+    final a = angles[def.primaryJoint];
+    if (other == null) return a;
+    final b = angles[other];
+    if (a != null && b != null) return (a + b) / 2.0;
+    return a ?? b;
+  }
+
+  bool _holdBelowLow(double a, int nowMs) {
+    if (a <= def.lowEnter) {
+      _lowHoldSinceMs ??= nowMs;
+      return (nowMs - _lowHoldSinceMs!) >= _extremeHoldMs;
+    }
+    if (_lowHoldSinceMs != null && a > (def.lowEnter + _resetHysteresisDeg)) {
+      _lowHoldSinceMs = null;
+    }
+    return false;
+  }
+
+  bool _holdAboveHigh(double a, int nowMs) {
+    if (a >= def.highEnter) {
+      _highHoldSinceMs ??= nowMs;
+      return (nowMs - _highHoldSinceMs!) >= _extremeHoldMs;
+    }
+    if (_highHoldSinceMs != null && a < (def.highEnter - _resetHysteresisDeg)) {
+      _highHoldSinceMs = null;
+    }
+    return false;
   }
 
   CapturedRep? _updateStartAtHigh(double a, int nowMs) {
@@ -114,9 +175,12 @@ class RepAnalyser {
         break;
 
       case _RepPhase.movingToOppositeExtreme:
-        if (a <= def.lowEnter) _hitOppositeExtreme = true;
+        if (!_hitOppositeExtreme && _holdBelowLow(a, nowMs)) {
+          _hitOppositeExtreme = true;
+        }
         if (_hitOppositeExtreme && a >= def.lowExit) {
           _phase = _RepPhase.returning;
+          _highHoldSinceMs = null;
         }
         break;
 
@@ -126,10 +190,12 @@ class RepAnalyser {
           _phase = _RepPhase.idle;
           return null;
         }
-        if (a >= def.highEnter) {
+        if (_holdAboveHigh(a, nowMs)) {
           final end = nowMs;
           _phase = _RepPhase.idle;
           _repStartMs = null;
+          _lowHoldSinceMs = null;
+          _highHoldSinceMs = null;
 
           if ((end - start) < def.minRepMs) return null;
 
@@ -163,9 +229,12 @@ class RepAnalyser {
         break;
 
       case _RepPhase.movingToOppositeExtreme:
-        if (a >= def.highEnter) _hitOppositeExtreme = true;
+        if (!_hitOppositeExtreme && _holdAboveHigh(a, nowMs)) {
+          _hitOppositeExtreme = true;
+        }
         if (_hitOppositeExtreme && a <= def.highExit) {
           _phase = _RepPhase.returning;
+          _lowHoldSinceMs = null;
         }
         break;
 
@@ -175,10 +244,12 @@ class RepAnalyser {
           _phase = _RepPhase.idle;
           return null;
         }
-        if (a <= def.lowEnter) {
+        if (_holdBelowLow(a, nowMs)) {
           final end = nowMs;
           _phase = _RepPhase.idle;
           _repStartMs = null;
+          _lowHoldSinceMs = null;
+          _highHoldSinceMs = null;
 
           if ((end - start) < def.minRepMs) return null;
 

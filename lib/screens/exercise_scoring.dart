@@ -12,6 +12,7 @@ import '/pose/rep_scoring.dart';
 import '/pose/rep_templates.dart';
 import '/pose/rep_feedback.dart';
 
+const bool kMirrorFrontCameraPreview = true;
 class ExerciseScoringCameraPage extends StatefulWidget {
   const ExerciseScoringCameraPage({super.key});
 
@@ -22,28 +23,33 @@ class ExerciseScoringCameraPage extends StatefulWidget {
 
 class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
     with WidgetsBindingObserver {
-  CameraController? _controller;
-  List<CameraDescription> _cameras = [];
-  int _cameraIndex = 0;
-  List<RepFeedback> _feedbackHistory = [];
-  RepFeedback? _lastFeedback;
+      CameraController? _controller;
+      List<CameraDescription> _cameras = [];
+      int _cameraIndex = 0;
+      List<RepFeedback> _feedbackHistory = [];
+      RepFeedback? _lastFeedback;
 
-  late final PoseDetector _poseDetector;
+      late final PoseDetector _poseDetector;
 
-  bool _isBusy = false;
-  Pose? _pose;
+      bool _isBusy = false;
+      Pose? _pose;
 
-  Size? _imageSize;
-  InputImageRotation? _lastRotation;
+      Size? _imageSize;
 
-  bool _recording = false;
+      InputImageRotation? _lastRotation;
 
-  late ExerciseDefinition _exercise;
-  late RepAnalyser _repAnalyser;
+      bool _recording = false;
 
-  int _repCount = 0;
-  RepScore? _lastScore;
-  Map<JointAngleKind, double>? _latestAngles;
+      late ExerciseDefinition _exercise;
+      late RepAnalyser _repAnalyser;
+
+      int _repCount = 0;
+      RepScore? _lastScore;
+
+      final List<RepScore> _scoreHistory = [];
+      double? _setOverallScore;
+
+      Map<JointAngleKind, double>? _latestAngles;
 
   static const _orientations = <DeviceOrientation, int>{
     DeviceOrientation.portraitUp: 0,
@@ -126,6 +132,8 @@ class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
       _imageSize = null;
       _latestAngles = null;
       _lastScore = null;
+      _scoreHistory.clear();
+      _setOverallScore = null;
       _repCount = 0;
       _recording = false;
     });
@@ -140,66 +148,88 @@ class _ExerciseScoringCameraPageState extends State<ExerciseScoringCameraPage>
       _repAnalyser = RepAnalyser(_exercise);
       _repCount = 0;
       _lastScore = null;
+      _scoreHistory.clear();
+      _setOverallScore = null;
       _recording = false;
     });
   }
 
   void _toggleRecording() {
-  final wasRecording = _recording;
+    final wasRecording = _recording;
 
-  setState(() {
-    _recording = !_recording;
+    setState(() {
+      _recording = !_recording;
 
-    if (!wasRecording) {
-      _repAnalyser.reset();
-      _repCount = 0;
-      _lastScore = null;
-      _lastFeedback = null;
-      _feedbackHistory = [];
+      if (!wasRecording) {
+         _repAnalyser.reset();
+        _repCount = 0;
+        _lastScore = null;
+        _scoreHistory.clear();
+        _setOverallScore = null;
+        _lastFeedback = null;
+        _feedbackHistory = [];
+      }
+    });
+
+    if (wasRecording) {
+      _showSetSummary();
     }
-  });
-
-  if (wasRecording) {
-    _showSetSummary();
   }
-}
 
-Future<void> _showSetSummary() async {
-  if (!mounted) return;
-  if (_feedbackHistory.isEmpty) return;
+  Future<void> _showSetSummary() async {
+    if (!mounted) return;
+    if (_feedbackHistory.isEmpty) return;
 
-  final items = RepFeedbackGenerator.summariseSet(
-    _feedbackHistory,
-    _exercise,
-    maxItems: 5,
-  );
+    final items = RepFeedbackGenerator.summariseSet(
+      _feedbackHistory,
+      _exercise,
+      maxItems: 5,
+    );
 
-  await showModalBottomSheet(
-    context: context,
-    showDragHandle: true,
-    builder: (ctx) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Set feedback',
-              style: Theme.of(ctx).textTheme.titleLarge,
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  'Set feedback',
+                  style: Theme.of(ctx).textTheme.titleLarge,
+                ),
+                const Spacer(),
+                if (_setOverallScore != null)
+                  Text(
+                    'Overall: ${_setOverallScore!.toStringAsFixed(1)}%',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+              ],
             ),
+            if (_lastScore != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Last rep: ${_lastScore!.overall.toStringAsFixed(1)}%',
+                style: Theme.of(ctx).textTheme.bodyMedium,
+              ),
+            ],
             const SizedBox(height: 12),
-            ...items.map((m) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text('• $m'),
-                )),
-            const SizedBox(height: 8),
-          ],
+              ...items.map((m) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text('• $m'),
+                  )),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   void _processCameraImage(CameraImage image) async {
     if (_isBusy || _controller == null) return;
@@ -237,11 +267,15 @@ Future<void> _showSetSummary() async {
           _latestAngles = angles;
           _repCount += 1;
           _lastScore = score;
+
+          _scoreHistory.add(score);
+          final sum = _scoreHistory.fold<double>(0, (acc, s) => acc + s.overall);
+          _setOverallScore = sum / _scoreHistory.length;
+
           _lastFeedback = feedback;
           _feedbackHistory.add(feedback);
         });
-      }
-      else {
+      } else {
         setState(() {
           _pose = pose;
           _latestAngles = angles;
@@ -272,14 +306,12 @@ Future<void> _showSetSummary() async {
               : (sensorOrientation - deviceRotation + 360) % 360;
       rotation = InputImageRotationValue.fromRawValue(rotationCompensation);
     }
+
     if (rotation == null) return null;
+
     _lastRotation = rotation;
 
-    final isQuarterTurn = rotation == InputImageRotation.rotation90deg ||
-        rotation == InputImageRotation.rotation270deg;
-    _imageSize = isQuarterTurn
-        ? Size(image.height.toDouble(), image.width.toDouble())
-        : Size(image.width.toDouble(), image.height.toDouble());
+    _imageSize = Size(image.width.toDouble(), image.height.toDouble());
 
     if (Platform.isIOS) {
       final format = InputImageFormatValue.fromRawValue(image.format.raw);
@@ -387,7 +419,10 @@ Future<void> _showSetSummary() async {
               value: _exercise.id,
               onChanged: (v) => v == null ? null : _selectExercise(v),
               items: BuiltInExerciseCatalog.all()
-                  .map((e) => DropdownMenuItem(value: e.id, child: Text(BuiltInExerciseCatalog.displayName(e.id))))
+                  .map((e) => DropdownMenuItem(
+                        value: e.id,
+                        child: Text(BuiltInExerciseCatalog.displayName(e.id)),
+                      ))
                   .toList(),
             ),
           ),
@@ -407,10 +442,10 @@ Future<void> _showSetSummary() async {
                   controller: controller,
                   pose: _pose,
                   imageSize: _imageSize,
+                  rotation: _lastRotation,
                   lensDirection: lensDirection,
                   perJointScore: _lastScore?.perJoint,
                 ),
-
                 Positioned(
                   left: 12,
                   top: 12,
@@ -420,11 +455,11 @@ Future<void> _showSetSummary() async {
                     exerciseId: _exercise.id,
                     repCount: _repCount,
                     score: _lastScore,
+                    setOverallScore: _setOverallScore,
                     onToggleRecording: _toggleRecording,
                     feedback: _lastFeedback,
                   ),
                 ),
-
                 Positioned(
                   left: 12,
                   right: 12,
@@ -444,6 +479,7 @@ class _FullScreenCameraWithOverlay extends StatelessWidget {
   final CameraController controller;
   final Pose? pose;
   final Size? imageSize;
+  final InputImageRotation? rotation;
   final CameraLensDirection lensDirection;
   final Map<JointAngleKind, double>? perJointScore;
 
@@ -451,6 +487,7 @@ class _FullScreenCameraWithOverlay extends StatelessWidget {
     required this.controller,
     required this.pose,
     required this.imageSize,
+    required this.rotation,
     required this.lensDirection,
     required this.perJointScore,
   });
@@ -462,34 +499,45 @@ class _FullScreenCameraWithOverlay extends StatelessWidget {
       return CameraPreview(controller);
     }
 
-    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+    final isPortrait =
+        MediaQuery.of(context).orientation == Orientation.portrait;
     final childW = isPortrait ? previewSize.height : previewSize.width;
     final childH = isPortrait ? previewSize.width : previewSize.height;
 
+    final content = SizedBox(
+      width: childW,
+      height: childH,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CameraPreview(controller),
+          if (pose != null && imageSize != null && rotation != null)
+            CustomPaint(
+              painter: _PosePainter(
+                pose: pose!,
+                imageSize: imageSize!,
+                rotation: rotation!,
+                perJointScore: perJointScore,
+              ),
+            ),
+        ],
+      ),
+    );
 
-     return ClipRect(
+    final maybeMirrored = (kMirrorFrontCameraPreview &&
+            lensDirection == CameraLensDirection.front)
+        ? Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()..scale(-1.0, 1.0, 1.0),
+            child: content,
+          )
+        : content;
+
+    return ClipRect(
       child: SizedBox.expand(
         child: FittedBox(
           fit: BoxFit.cover,
-          child: SizedBox(
-            width: childW,
-            height: childH,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CameraPreview(controller),
-                if (pose != null && imageSize != null)
-                  CustomPaint(
-                    painter: _PosePainter(
-                      pose: pose!,
-                      imageSize: imageSize!,
-                      lensDirection: lensDirection,
-                      perJointScore: perJointScore,
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          child: maybeMirrored,
         ),
       ),
     );
@@ -500,7 +548,11 @@ class _Hud extends StatelessWidget {
   final bool recording;
   final String exerciseId;
   final int repCount;
+
   final RepScore? score;
+
+  final double? setOverallScore;
+
   final VoidCallback onToggleRecording;
   final RepFeedback? feedback;
 
@@ -509,9 +561,10 @@ class _Hud extends StatelessWidget {
     required this.exerciseId,
     required this.repCount,
     required this.score,
+    required this.setOverallScore,
     required this.onToggleRecording,
     required this.feedback,
-    });
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -548,7 +601,8 @@ class _Hud extends StatelessWidget {
                 const Text('No rep scored yet.')
               else ...[
                 Text(
-                  'Overall: ${score!.overall.toStringAsFixed(1)}%',
+                  'Overall: ${(setOverallScore ?? score!.overall).toStringAsFixed(1)}%'
+                  '  •  Last rep: ${score!.overall.toStringAsFixed(1)}%',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -564,7 +618,10 @@ class _Hud extends StatelessWidget {
                 ),
                 if (feedback != null && feedback!.cues.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  const Text('Next rep focus:', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text(
+                    'Next rep focus:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 6),
                   ...feedback!.cues.map((c) => Text('• ${c.message}')),
                 ],
@@ -632,19 +689,20 @@ class _AngleDebugBar extends StatelessWidget {
   }
 }
 
-
-
 class _PosePainter extends CustomPainter {
   _PosePainter({
     required this.pose,
     required this.imageSize,
-    required this.lensDirection,
+    required this.rotation,
     required this.perJointScore,
   });
 
   final Pose pose;
+
   final Size imageSize;
-  final CameraLensDirection lensDirection;
+
+  final InputImageRotation rotation;
+
   final Map<JointAngleKind, double>? perJointScore;
 
   static const _edges = <List<PoseLandmarkType>>[
@@ -683,17 +741,13 @@ class _PosePainter extends CustomPainter {
       ..strokeWidth = 2.0
       ..color = Colors.white;
 
-    // Map pose (image coords) -> canvas coords
-    final scaleX = size.width / imageSize.width;
-    final scaleY = size.height / imageSize.height;
-
     for (final edge in _edges) {
       final a = lm[edge.first];
       final b = lm[edge.last];
       if (a == null || b == null) continue;
 
-      final p1 = _toCanvas(a.x, a.y, scaleX, scaleY, size);
-      final p2 = _toCanvas(b.x, b.y, scaleX, scaleY, size);
+      final p1 = _toCanvas(a.x, a.y, size);
+      final p2 = _toCanvas(b.x, b.y, size);
 
       final joint = _jointForEdge(edge.first, edge.last);
       final linePaint = Paint()
@@ -706,30 +760,65 @@ class _PosePainter extends CustomPainter {
     }
 
     for (final l in lm.values) {
-      final p = _toCanvas(l.x, l.y, scaleX, scaleY, size);
+      final p = _toCanvas(l.x, l.y, size);
       canvas.drawCircle(p, 3.5, pointPaint);
     }
   }
 
-  Offset _toCanvas(
-    double x,
-    double y,
-    double scaleX,
-    double scaleY,
-    Size canvasSize,
-  ) {
-    var cx = x * scaleX;
-    final cy = y * scaleY;
-
-    if (lensDirection == CameraLensDirection.front) {
-      cx = canvasSize.width - cx;
-    }
+  Offset _toCanvas(double x, double y, Size canvasSize) {
+    final cx = _translateX(x, rotation, canvasSize, imageSize);
+    final cy = _translateY(y, rotation, canvasSize, imageSize);
     return Offset(cx, cy);
+  }
+
+  double _translateX(
+    double x,
+    InputImageRotation rotation,
+    Size canvasSize,
+    Size imageSize,
+  ) {
+    switch (rotation) {
+      case InputImageRotation.rotation90deg:
+        return x *
+            canvasSize.width /
+            (Platform.isIOS ? imageSize.width : imageSize.height);
+      case InputImageRotation.rotation270deg:
+        return canvasSize.width -
+            x *
+                canvasSize.width /
+                (Platform.isIOS ? imageSize.width : imageSize.height);
+      case InputImageRotation.rotation180deg:
+        return canvasSize.width - (x * canvasSize.width / imageSize.width);
+      case InputImageRotation.rotation0deg:
+        return x * canvasSize.width / imageSize.width;
+    }
+  }
+
+  double _translateY(
+    double y,
+    InputImageRotation rotation,
+    Size canvasSize,
+    Size imageSize,
+  ) {
+    switch (rotation) {
+      case InputImageRotation.rotation90deg:
+      case InputImageRotation.rotation270deg:
+        return y *
+            canvasSize.height /
+            (Platform.isIOS ? imageSize.height : imageSize.width);
+      case InputImageRotation.rotation180deg:
+        return canvasSize.height -
+            (y * canvasSize.height / imageSize.height);
+      case InputImageRotation.rotation0deg:
+        return y * canvasSize.height / imageSize.height;
+    }
   }
 
   Color _colorForJoint(JointAngleKind? joint) {
     final scores = perJointScore;
-    if (scores == null || joint == null) return Colors.white.withValues(alpha: 0.85);
+    if (scores == null || joint == null) {
+      return Colors.white.withValues(alpha: 0.85);
+    }
 
     final s = scores[joint];
     if (s == null) return Colors.white.withValues(alpha: 0.75);
@@ -780,7 +869,7 @@ class _PosePainter extends CustomPainter {
   bool shouldRepaint(covariant _PosePainter oldDelegate) {
     return oldDelegate.pose != pose ||
         oldDelegate.imageSize != imageSize ||
-        oldDelegate.lensDirection != lensDirection ||
+        oldDelegate.rotation != rotation ||
         oldDelegate.perJointScore != perJointScore;
   }
 }

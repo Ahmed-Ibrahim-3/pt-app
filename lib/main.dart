@@ -6,7 +6,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:pt/firebase_options.dart';
-import 'package:pt/models/saved_meal.dart';
 
 import 'auth_gate.dart';
 import 'models/meal_model.dart';
@@ -19,30 +18,59 @@ Future<void> _initHive() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
 
-  Hive.registerAdapter(MealAdapter());              
-  Hive.registerAdapter(ExercisePlanAdapter());     
-  Hive.registerAdapter(PlanAssignmentAdapter());     
-  Hive.registerAdapter(WorkoutSessionAdapter());      
-  Hive.registerAdapter(WorkoutEntryAdapter());      
-  Hive.registerAdapter(SetEntryAdapter());          
-  Hive.registerAdapter(SavedMealAdapter());
+  Hive.registerAdapter(MealAdapter());
+  Hive.registerAdapter(ExercisePlanAdapter());
+  Hive.registerAdapter(PlanAssignmentAdapter());
+  Hive.registerAdapter(WorkoutSessionAdapter());
+  Hive.registerAdapter(WorkoutEntryAdapter());
+  Hive.registerAdapter(SetEntryAdapter());
 
   await Hive.openBox<Meal>('meals_box');
   await Hive.openBox<ExercisePlan>(ExerciseHive.plansBox);
   await Hive.openBox<PlanAssignment>(ExerciseHive.assignmentsBox);
   await Hive.openBox<WorkoutSession>(ExerciseHive.sessionsBox);
-  await Hive.openBox<SavedMeal>('saved_meals');
 }
 
 void main() async {
   await _initHive();
   await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
-    unawaited(GoogleSignIn.instance.initialize()
-        .then((_) => GoogleSignIn.instance.attemptLightweightAuthentication()));
-    runApp(ProviderScope(child: MyApp()));
+  unawaited(GoogleSignIn.instance.initialize().then(
+      (_) => GoogleSignIn.instance.attemptLightweightAuthentication()));
+
+  runApp(const ProviderScope(child: MyApp()));
+}
+
+class AppScrollBehavior extends MaterialScrollBehavior {
+  const AppScrollBehavior();
+
+  @override
+  ScrollViewKeyboardDismissBehavior getKeyboardDismissBehavior(
+    BuildContext context,
+  ) {
+    return ScrollViewKeyboardDismissBehavior.onDrag;
+  }
+}
+
+class KeyboardDismissOnPointerDown extends StatelessWidget {
+  final Widget child;
+  const KeyboardDismissOnPointerDown({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) {
+        final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+        if (keyboardOpen) {
+          FocusManager.instance.primaryFocus?.unfocus();
+        }
+      },
+      child: child,
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -52,6 +80,16 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Fitness & Nutrition Tracker',
+      debugShowCheckedModeBanner: false,
+
+      scrollBehavior: const AppScrollBehavior(),
+
+      builder: (context, child) {
+        return KeyboardDismissOnPointerDown(
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
+
       theme: ThemeData(
         brightness: Brightness.dark,
         primaryColor: Colors.blueGrey,
@@ -70,15 +108,13 @@ class MyApp extends StatelessWidget {
           type: BottomNavigationBarType.fixed,
         ),
         progressIndicatorTheme: ProgressIndicatorThemeData(
-          color: Colors.lightGreenAccent.shade400,
-          linearTrackColor: Colors.grey.shade800,
-          circularTrackColor: Colors.grey.shade800,
+          color: Colors.lightGreenAccent,
+          linearTrackColor: Colors.grey,
+          circularTrackColor: Colors.grey,
         ),
         useMaterial3: true,
       ),
       home: const AuthGate(),
-      debugShowCheckedModeBanner: false,
     );
   }
 }
-

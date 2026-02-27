@@ -19,7 +19,7 @@ class WorkoutSummaryPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final planBox = Hive.box<ExercisePlan>(ExerciseHive.plansBox);
-    final title = planBox.get(planKey)?.name ?? 'Unknown Plan';
+    final title = planBox.get(planKey)?.name ?? 'Unknown';
 
     final prettyDate =
         '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';

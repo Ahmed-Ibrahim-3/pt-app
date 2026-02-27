@@ -40,7 +40,7 @@ class _WorkoutSessionPageState extends ConsumerState<WorkoutSessionPage> {
     final plans = ref.read(plansStreamProvider).value ?? [];
     final p = plans.firstWhere(
       (e) => e.key == widget.planKey,
-      orElse: () => ExercisePlan(name: 'Unknown plan', exerciseIds: const [], createdAt: DateTime.now()),
+      orElse: () => ExercisePlan(name: 'Unknown', exerciseIds: const [], createdAt: DateTime.now()),
     );
     final repo = ref.read(workoutSessionRepoProvider);
     final s = await repo.startOrResume(

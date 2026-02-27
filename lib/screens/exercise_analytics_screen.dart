@@ -58,12 +58,26 @@ class _ExerciseAnalyticsPageState extends ConsumerState<ExerciseAnalyticsPage> {
 class _KpiRow extends StatelessWidget {
   final List<_Kpi> kpis;
   const _KpiRow({required this.kpis});
+
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      runSpacing: 12,
-      spacing: 12,
-      children: kpis.map((k) => Expanded(child: k)).toList(growable: false),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 12.0;
+        final maxWidth = constraints.maxWidth;
+
+        // 2 columns on phones, 4 on wider layouts/tablets
+        final columns = maxWidth >= 600 ? 4 : 2;
+        final itemWidth = (maxWidth - spacing * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (final k in kpis) SizedBox(width: itemWidth, child: k),
+          ],
+        );
+      },
     );
   }
 }

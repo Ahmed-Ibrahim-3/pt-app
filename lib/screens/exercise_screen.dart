@@ -195,7 +195,7 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
                               const Icon(Icons.event_busy),
                               const SizedBox(width: 12),
                               const Expanded(
-                                  child: Text('No plan assigned for this day')),
+                                  child: Text('No workout assigned for this day')),
                               FilledButton(
                                 onPressed: () => _openAssignmentSheet(_selectedDay),
                                 child: const Text('Assign'),
@@ -239,7 +239,7 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
                   final plan = plans.firstWhere(
                     (p) => p.key == a.planKey,
                     orElse: () => ExercisePlan(
-                        name: 'Unknown plan',
+                        name: 'Unknown',
                         exerciseIds: const [],
                         createdAt: DateTime.now()),
                   );
@@ -306,7 +306,7 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
                             const SizedBox(height: 12),
                             if (plan.exerciseIds.isEmpty)
                               const Text(
-                                  'This plan has no exercises yet. Edit it in the Workouts tab.')
+                                  'This workout has no exercises yet. Edit it in the Workouts tab.')
                             else
                               Wrap(
                                 spacing: 8,
@@ -362,7 +362,7 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
                   );
                 },
                 icon: const Icon(Icons.hub_outlined),
-                label: const Text('Pose Overlay'),
+                label: const Text('Exercise Scoring'),
               ),
 
 
@@ -371,7 +371,7 @@ class _ExerciseScreenState extends ConsumerState<ExerciseScreen>
               Expanded(
                 child: Center(
                   child: Text(
-                    'Tip: long press a day to assign a plan or rest.',
+                    'Tip: long press a day to assign a workout or rest day.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -474,7 +474,7 @@ class _WorkoutsTab extends ConsumerWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('No workout plans yet.'),
+                    const Text('No workouts yet.'),
                     const SizedBox(height: 8),
                     FilledButton.icon(
                       onPressed: () async {
@@ -484,7 +484,7 @@ class _WorkoutsTab extends ConsumerWidget {
                         onPlanEdited();
                       },
                       icon: const Icon(Icons.add),
-                      label: const Text('Create a plan'),
+                      label: const Text('Create a Workout'),
                     ),
                   ],
                 ),
@@ -520,7 +520,7 @@ class _WorkoutsTab extends ConsumerWidget {
                           final confirm = await showDialog<bool>(
                             context: context,
                             builder: (_) => AlertDialog(
-                              title: const Text('Delete plan?'),
+                              title: const Text('Delete?'),
                               content: Text('This will remove "${p.name}". Any days assigned to it will be cleared.'),
                               actions: [
                                 TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
