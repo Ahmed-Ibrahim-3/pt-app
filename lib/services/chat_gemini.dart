@@ -1,7 +1,8 @@
+import 'dart:convert';
 import 'dart:typed_data';
-import 'package:google_generative_ai/google_generative_ai.dart';
 
-const _geminiKey = String.fromEnvironment('GEMINI_API_KEY');
+import 'package:cloud_functions/cloud_functions.dart';
+
 const _primaryModel = 'gemini-2.0-flash';
 const _fallbackModel = 'gemini-2.5-flash';
 
@@ -57,8 +58,8 @@ class MealSuggestionDetailed {
   final MealTotals totals;
   final List<SwapOption> swaps;
   final bool isEstimate;
-  final double? confidence;     
-  final String? estimationNote; 
+  final double? confidence;
+  final String? estimationNote;
   final String? notes;
   MealSuggestionDetailed({
     required this.title,
@@ -75,7 +76,7 @@ class MealSuggestionDetailed {
 class WorkoutExercise {
   final String name;
   final int sets, reps;
-  final double rpe; 
+  final double rpe;
   final int? restSeconds;
   final List<String> swaps;
   WorkoutExercise({
@@ -108,201 +109,177 @@ class ChatTurn {
   final MealSuggestionDetailed? meal;
   final WorkoutPlanSuggestion? plan;
   ChatTurn.user(this.text, {this.media = const []})
-      : fromUser = true, meal = null, plan = null;
+      : fromUser = true,
+        meal = null,
+        plan = null;
   ChatTurn.model(this.text, {this.media = const [], this.meal, this.plan})
       : fromUser = false;
 }
 
 class GeminiChatService {
-  late final List<Tool> _tools;
-  late final ToolConfig _toolConfig;
-  late final Content _systemInstruction;
+  final FirebaseFunctions _functions;
+  final HttpsCallable _callable;
 
-  late GenerativeModel _model;    
-  late String _modelName;       
-  late final String _fallbackName;
+  final String? _systemInstruction;
+  final List<Map<String, dynamic>> _history = [];
 
-  final List<Content> _history = [];
+  GeminiChatService({
+    String? systemInstruction,
+    FirebaseFunctions? functions,
+    String region = 'europe-west2',
+  })  : _functions = functions ?? FirebaseFunctions.instanceFor(region: region),
+        _systemInstruction = systemInstruction,
+        _callable = (functions ?? FirebaseFunctions.instanceFor(region: region))
+            .httpsCallable('geminiChat');
 
-  GeminiChatService({String? systemInstruction}) {
-    _tools = [
-      Tool(functionDeclarations: [
-        FunctionDeclaration(
-          'propose_meal',
-          'Return a specific meal with ingredients, per-ingredient macros, totals, and low-impact swaps.',
-          Schema.object(
-            properties: {
-              'title': Schema.string(description: 'Short, human-friendly meal title'),
-              'ingredients': Schema.array(
-                description: 'List of ingredients with amount, unit, per-ingredient macros',
-                items: Schema.object(
-                  properties: {
-                    'name': Schema.string(),
-                    'amount': Schema.number(),
-                    'unit': Schema.string(description: 'g, ml, tbsp, cup, slice, etc.'),
-                    'calories': Schema.number(),
-                    'protein': Schema.number(),
-                    'carbs': Schema.number(),
-                    'fat': Schema.number(),
-                  },
-                  requiredProperties: ['name','amount','unit','calories','protein','carbs','fat'],
-                ),
-              ),
-              'totals': Schema.object(
-                properties: {
-                  'calories': Schema.number(),
-                  'protein': Schema.number(),
-                  'carbs': Schema.number(),
-                  'fat': Schema.number(),
-                },
-                requiredProperties: ['calories','protein','carbs','fat'],
-              ),
-              'swaps': Schema.array(
-                description: 'Small substitutions with minimal macro impact',
-                items: Schema.object(
-                  properties: {
-                    'name': Schema.string(),
-                    'why': Schema.string(description: 'Reason for the swap'),
-                    'macroImpact': Schema.string(description: 'Short summary, e.g., "~ -30 kcal, -2g fat"'),
-                  },
-                  requiredProperties: ['name','why','macroImpact'],
-                ),
-              ),
-              'notes': Schema.string(description: 'Optional serving/prep notes'),
-            },
-            requiredProperties: ['title','ingredients','totals'],
-          ),
-        ),
+  Map<String, dynamic> _textPart(String text) => {'text': text};
 
-        FunctionDeclaration(
-          'estimate_meal_from_input',
-          'Estimate a meal from the provided text and/or images with ingredient breakdown, totals, confidence and disclaimer.',
-          Schema.object(
-            properties: {
-              'title': Schema.string(),
-              'ingredients': Schema.array(
-                items: Schema.object(
-                  properties: {
-                    'name': Schema.string(),
-                    'amount': Schema.number(),
-                    'unit': Schema.string(),
-                    'calories': Schema.number(),
-                    'protein': Schema.number(),
-                    'carbs': Schema.number(),
-                    'fat': Schema.number(),
-                  },
-                  requiredProperties: ['name','amount','unit','calories','protein','carbs','fat'],
-                ),
-              ),
-              'totals': Schema.object(
-                properties: {
-                  'calories': Schema.number(),
-                  'protein': Schema.number(),
-                  'carbs': Schema.number(),
-                  'fat': Schema.number(),
-                },
-                requiredProperties: ['calories','protein','carbs','fat'],
-              ),
-              'swaps': Schema.array(
-                items: Schema.object(
-                  properties: {
-                    'name': Schema.string(),
-                    'why': Schema.string(),
-                    'macroImpact': Schema.string(),
-                  },
-                  requiredProperties: ['name','why','macroImpact'],
-                ),
-              ),
-              'confidence': Schema.number(description: '0..1'),
-              'estimationNote': Schema.string(description: 'Short disclaimer about estimation accuracy'),
-              'notes': Schema.string(),
-            },
-            requiredProperties: ['title','ingredients','totals'],
-          ),
-        ),
+  Map<String, dynamic> _inlineDataPart(Uint8List bytes, String mime) => {
+        'inlineData': {
+          'mimeType': mime,
+          'data': base64Encode(bytes),
+        }
+      };
 
-        FunctionDeclaration(
-          'propose_workout_plan',
-          'Return a workout plan with sets, reps, RPE (0-10), optional rest, and exercise swaps.',
-          Schema.object(
-            properties: {
-              'name': Schema.string(),
-              'assignToToday': Schema.boolean(),
-              'exercises': Schema.array(
-                items: Schema.object(
-                  properties: {
-                    'name': Schema.string(),
-                    'sets': Schema.integer(),
-                    'reps': Schema.integer(),
-                    'rpe': Schema.number(description: '0..10 scale'),
-                    'restSeconds': Schema.integer(description: 'Optional rest time between sets'),
-                    'swaps': Schema.array(items: Schema.string(), description: 'Alternative exercises'),
-                  },
-                  requiredProperties: ['name','sets','reps','rpe'],
-                ),
-              ),
-              'notes': Schema.string(),
-            },
-            requiredProperties: ['name','exercises'],
-          ),
-        ),
-      ]),
-    ];
-
-    _toolConfig =  ToolConfig(
-      functionCallingConfig: FunctionCallingConfig(),
-    );
-
-    _systemInstruction = Content.text(systemInstruction ??
-        '''
-You are a helpful fitness & nutrition assistant. Use mainstream, trusted sports/nutrition science. 
-Be specific and quantitative. If the user wants a concrete meal or workout, call a function to return structured data.
-
-MEALS
-- When proposing meals, include ingredients with amounts and per-ingredient macros (kcal, protein, carbs, fat).
-- Also include totals, and 2–4 small low-impact swaps (with brief macro impact).
-- If the user sends a description or image of food, estimate the meal via the estimation function and include a confidence 0..1 and a brief disclaimer.
-
-WORKOUTS
-- For each exercise, provide sets, reps, RPE (0-10), optional restSeconds, and 1–3 swaps (alternatives targeting similar muscles).
-- Use conservative guidance for intensity. RPE is subjective and should align with how hard the user *feels* the effort (0=rest, 10=max).
-
-Avoid extreme claims; do not diagnose conditions. Keep wording concise.
-''');
-
-    _modelName = _primaryModel;
-    _fallbackName = _fallbackModel;
-    _model = _makeModel(_modelName);
+  bool _isRetryableFirebaseError(Object e) {
+    if (e is FirebaseFunctionsException) {
+      // Common transient cases
+      return e.code == 'unavailable' ||
+          e.code == 'resource-exhausted' ||
+          e.code == 'deadline-exceeded' ||
+          e.code == 'internal';
+    }
+    final s = e.toString().toLowerCase();
+    return s.contains('unavailable') ||
+        s.contains('resource-exhausted') ||
+        s.contains('deadline') ||
+        s.contains('timeout') ||
+        s.contains('503') ||
+        s.contains('429');
   }
 
-  GenerativeModel _makeModel(String name) => GenerativeModel(
-        model: name,
-        apiKey: _geminiKey,
-        tools: _tools,
-        toolConfig: _toolConfig,
-        systemInstruction: _systemInstruction,
-      );
-
-  Future<T> _withRetry<T>(Future<T> Function() run) async {
-    const delays = [400, 900, 1800, 3200];  
-    Object? lastErr;
-    for (var i = 0; i < delays.length; i++) {
+  Future<Map<String, dynamic>> _withRetry(
+    Future<Map<String, dynamic>> Function() run,
+  ) async {
+    const delaysMs = [300, 700, 1400, 2400];
+    Object? last;
+    for (var i = 0; i < delaysMs.length; i++) {
       try {
         return await run();
       } catch (e) {
-        lastErr = e;
-        final s = e.toString();
-        final isOverloaded = s.contains('503') || s.contains('overloaded');
-        final isQuota = s.contains('429') || s.contains('exhausted');
-        if (!(isOverloaded || isQuota)) break;
-        await Future.delayed(Duration(milliseconds: delays[i] + (50 * i)));
+        last = e;
+        if (!_isRetryableFirebaseError(e)) rethrow;
+        await Future.delayed(Duration(milliseconds: delaysMs[i] + 50 * i));
       }
     }
-    throw lastErr ?? Exception('unknown error');
+    throw last ?? Exception('Unknown error');
   }
 
-  bool _isUnhandledContent(Object e) =>
-      e.toString().contains('Unhandled format for Content');
+  Future<Map<String, dynamic>> _callGemini(List<Map<String, dynamic>> contents) async {
+    final res = await _withRetry(() async {
+      final out = await _callable.call({
+        'model': _primaryModel,
+        'fallbackModel': _fallbackModel,
+        'systemInstruction': _systemInstruction,
+        'contents': contents,
+      });
+      return Map<String, dynamic>.from(out.data as Map);
+    });
+    return res;
+  }
+
+  ChatTurn _parseToolCallToTurn(Map<String, Object?> m, String fnName) {
+    switch (fnName) {
+      case 'propose_meal':
+      case 'estimate_meal_from_input':
+        final isEstimate = fnName == 'estimate_meal_from_input';
+
+        final ingredientsList = (m['ingredients'] as List?) ?? const [];
+        final ings = ingredientsList.whereType<Map>().map((raw) {
+          final mm = Map<String, Object?>.from(raw);
+          return Ingredient(
+            name: (mm['name'] as String? ?? '').trim(),
+            amount: _asDouble(mm['amount']),
+            unit: (mm['unit'] as String? ?? '').trim(),
+            calories: _asDouble(mm['calories']),
+            protein: _asDouble(mm['protein']),
+            carbs: _asDouble(mm['carbs']),
+            fat: _asDouble(mm['fat']),
+          );
+        }).toList();
+
+        final totalsMap = _mapCast<Map<String, Object?>>(m['totals'], const {});
+        final totals = (totalsMap.isNotEmpty)
+            ? MealTotals(
+                _asDouble(totalsMap['calories']),
+                _asDouble(totalsMap['protein']),
+                _asDouble(totalsMap['carbs']),
+                _asDouble(totalsMap['fat']),
+              )
+            : MealTotals(
+                _sum(ings.map((i) => i.calories)),
+                _sum(ings.map((i) => i.protein)),
+                _sum(ings.map((i) => i.carbs)),
+                _sum(ings.map((i) => i.fat)),
+              );
+
+        final swaps = ((m['swaps'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((raw) {
+              final mm = Map<String, Object?>.from(raw);
+              return SwapOption(
+                name: (mm['name'] as String? ?? '').trim(),
+                why: (mm['why'] as String? ?? '').trim(),
+                macroImpact: (mm['macroImpact'] as String? ?? '').trim(),
+              );
+            })
+            .toList();
+
+        return ChatTurn.model(
+          isEstimate ? 'Here’s an estimated breakdown.' : 'Here’s a detailed meal.',
+          meal: MealSuggestionDetailed(
+            title: ((m['title'] as String?) ?? '').trim(),
+            ingredients: ings,
+            totals: totals,
+            swaps: swaps,
+            isEstimate: isEstimate,
+            confidence: (m['confidence'] as num?)?.toDouble(),
+            estimationNote: m['estimationNote'] as String?,
+            notes: m['notes'] as String?,
+          ),
+        );
+
+      case 'propose_workout_plan':
+        final rawEx = (m['exercises'] as List?) ?? const [];
+        final ex = rawEx.whereType<Map>().map((eRaw) {
+          final e = Map<String, dynamic>.from(eRaw);
+          return WorkoutExercise(
+            name: (e['name'] as String? ?? '').trim(),
+            sets: (e['sets'] as num? ?? 0).toInt(),
+            reps: (e['reps'] as num? ?? 0).toInt(),
+            rpe: (e['rpe'] as num? ?? 0).toDouble(),
+            restSeconds: (e['restSeconds'] as num?)?.toInt(),
+            swaps: ((e['swaps'] as List?) ?? const [])
+                .map((s) => s.toString().trim())
+                .where((s) => s.isNotEmpty)
+                .toList(),
+          );
+        }).toList();
+
+        return ChatTurn.model(
+          'Here’s a structured plan.',
+          plan: WorkoutPlanSuggestion(
+            name: ((m['name'] as String?) ?? '').trim(),
+            assignToToday: (m['assignToToday'] as bool?) ?? false,
+            exercises: ex,
+            notes: m['notes'] as String?,
+          ),
+        );
+
+      default:
+        return ChatTurn.model('(unknown tool call: $fnName)');
+    }
+  }
 
   Future<ChatTurn> send({
     String? text,
@@ -311,232 +288,86 @@ Avoid extreme claims; do not diagnose conditions. Keep wording concise.
     bool nudgeWorkout = false,
     bool nudgeEstimateFromMedia = false,
   }) async {
-    final parts = <Part>[];
+    final parts = <Map<String, dynamic>>[];
     final hints = <String>[];
+
     if (nudgeEstimateFromMedia) {
       hints.add('If media or a food description is present, CALL estimate_meal_from_input.');
     }
     if (nudgeMeal) {
-      hints.add('If a concrete meal is requested, CALL propose_meal (ingredients, per-ingredient macros, totals, swaps).');
+      hints.add(
+        'If a concrete meal is requested, CALL propose_meal (ingredients, per-ingredient macros, totals, swaps).',
+      );
     }
     if (nudgeWorkout) {
-      hints.add('If a workout is requested, CALL propose_workout_plan (sets, reps, RPE, optional restSeconds, swaps).');
+      hints.add(
+        'If a workout is requested, CALL propose_workout_plan (sets, reps, RPE, optional restSeconds, swaps).',
+      );
     }
     if (hints.isNotEmpty) {
-      parts.add(TextPart('[TOOL_HINT]\n${hints.join("\n")}'));
+      parts.add(_textPart('[TOOL_HINT]\n${hints.join("\n")}'));
     }
     if (text != null && text.trim().isNotEmpty) {
-      parts.add(TextPart(text.trim()));
+      parts.add(_textPart(text.trim()));
     }
     for (final (bytes, mime) in media) {
-      parts.add(DataPart(mime, bytes));
+      parts.add(_inlineDataPart(bytes, mime));
     }
 
-    final request = <Content>[
-      ..._history,
-      Content('user', parts),
-    ];
+    final userContent = <String, dynamic>{'role': 'user', 'parts': parts};
+    final request = <Map<String, dynamic>>[..._history, userContent];
 
-    GenerateContentResponse resp;
-    try {
-      resp = await _withRetry(() => _model.generateContent(request));
-    } catch (e) {
-      if (_isUnhandledContent(e)) {
-        resp = await _withRetry(() => _model.generateContent(request));
-      }
-      else if (e.toString().contains('503') || e.toString().contains('overloaded')) {
-        final fb = _makeModel(_fallbackName);
-        resp = await _withRetry(() => fb.generateContent(request));
-      } else {
-        rethrow;
+    final data = await _callGemini(request);
+
+    // Update conversation history (user msg + model msg) for next calls
+    _history.add(userContent);
+    final candidateContent = data['candidateContent'];
+    if (candidateContent is Map) {
+      _history.add(Map<String, dynamic>.from(candidateContent));
+    }
+
+    // Parse tool calls
+    final rawCalls = (data['functionCalls'] as List?) ?? const [];
+    if (rawCalls.isNotEmpty) {
+      for (final c in rawCalls) {
+        if (c is! Map) continue;
+        final name = (c['name'] as String?) ?? '';
+        final args = c['args'];
+        final m = (args is Map) ? Map<String, Object?>.from(args) : <String, Object?>{};
+        if (name.isNotEmpty) {
+          return _parseToolCallToTurn(m, name);
+        }
       }
     }
 
-    _history.add(Content('user', parts));
-    final modelContent = resp.candidates.first.content;
-    _history.add(modelContent);
+    // If we *really* wanted an estimate but didn't get a tool call,
+    // do a second pass that enforces converting the message into estimate_meal_from_input.
+    if (nudgeEstimateFromMedia) {
+      final enforceMsg = _textPart(
+        '[TOOL_ENFORCE] Convert the user message into a call to estimate_meal_from_input. '
+        'Return ONLY the function call with: title, ingredients[{name,amount,unit,calories,protein,carbs,fat}], '
+        'totals{calories,protein,carbs,fat}, 2-4 swaps[{name,why,macroImpact}], confidence (0..1), estimationNote.',
+      );
 
-    final calls = resp.functionCalls;
-    if (calls.isNotEmpty) {
-      for (final f in calls) {
-        final m = f.args;
-        switch (f.name) {
-          case 'propose_meal':
-          case 'estimate_meal_from_input': {
-            final isEstimate = f.name == 'estimate_meal_from_input';
+      final enforceUser = <String, dynamic>{'role': 'user', 'parts': [enforceMsg]};
+      final request2 = <Map<String, dynamic>>[..._history, enforceUser];
 
-            final ingredientsList = (m['ingredients'] as List?) ?? const [];
-            final ings = ingredientsList
-                .whereType<Map>()  
-                .map((raw) {
-                  final mm = Map<String, Object?>.from(raw);
-                  return Ingredient(
-                    name: (mm['name'] as String? ?? '').trim(),
-                    amount: _asDouble(mm['amount']),
-                    unit: (mm['unit'] as String? ?? '').trim(),
-                    calories: _asDouble(mm['calories']),
-                    protein: _asDouble(mm['protein']),
-                    carbs: _asDouble(mm['carbs']),
-                    fat: _asDouble(mm['fat']),
-                  );
-                })
-                .toList();
-
-            final totalsMap = _mapCast<Map<String, Object?>>(m['totals'], const {});
-            final totals = (totalsMap.isNotEmpty)
-                ? MealTotals(
-                    _asDouble(totalsMap['calories']),
-                    _asDouble(totalsMap['protein']),
-                    _asDouble(totalsMap['carbs']),
-                    _asDouble(totalsMap['fat']),
-                  )
-                : MealTotals(
-                    _sum(ings.map((i) => i.calories)),
-                    _sum(ings.map((i) => i.protein)),
-                    _sum(ings.map((i) => i.carbs)),
-                    _sum(ings.map((i) => i.fat)),
-                  );
-
-            final swaps = ((m['swaps'] as List?) ?? const [])
-                .whereType<Map>()
-                .map((raw) {
-                  final mm = Map<String, Object?>.from(raw);
-                  return SwapOption(
-                    name: (mm['name'] as String? ?? '').trim(),
-                    why: (mm['why'] as String? ?? '').trim(),
-                    macroImpact: (mm['macroImpact'] as String? ?? '').trim(),
-                  );
-                })
-                .toList();
-
-            return ChatTurn.model(
-              isEstimate ? 'Here’s an estimated breakdown.' : 'Here’s a detailed meal.',
-              meal: MealSuggestionDetailed(
-                title: (m['title'] as String).trim(),
-                ingredients: ings,
-                totals: totals,
-                swaps: swaps,
-                isEstimate: isEstimate,
-                confidence: (m['confidence'] as num?)?.toDouble(),
-                estimationNote: m['estimationNote'] as String?,
-                notes: m['notes'] as String?,
-              ),
-            );
-          }
-          case 'propose_workout_plan': {
-            final ex = (m['exercises'] as List)
-                .cast<Map<String, dynamic>>()
-                .map((e) => WorkoutExercise(
-                      name: (e['name'] as String).trim(),
-                      sets: (e['sets'] as num).toInt(),
-                      reps: (e['reps'] as num).toInt(),
-                      rpe: (e['rpe'] as num).toDouble(),
-                      restSeconds: (e['restSeconds'] as num?)?.toInt(),
-                      swaps: ((e['swaps'] as List?) ?? [])
-                          .cast<String>()
-                          .map((s) => s.trim())
-                          .toList(),
-                    ))
-                .toList();
-
-            return ChatTurn.model(
-              'Here’s a structured plan.',
-              plan: WorkoutPlanSuggestion(
-                name: (m['name'] as String).trim(),
-                assignToToday: (m['assignToToday'] as bool?) ?? false,
-                exercises: ex,
-                notes: m['notes'] as String?,
-              ),
-            );
+      final data2 = await _callGemini(request2);
+      final calls2 = (data2['functionCalls'] as List?) ?? const [];
+      if (calls2.isNotEmpty) {
+        final c = calls2.first;
+        if (c is Map) {
+          final name = (c['name'] as String?) ?? '';
+          final args = c['args'];
+          final m = (args is Map) ? Map<String, Object?>.from(args) : <String, Object?>{};
+          if (name == 'estimate_meal_from_input') {
+            return _parseToolCallToTurn(m, name);
           }
         }
-        if (( calls.isEmpty) && nudgeEstimateFromMedia) {
-          final enforceParts = <Part>[
-            TextPart('[TOOL_ENFORCE] Convert the user message into a call to estimate_meal_from_input. '
-                'Return ONLY the function call with: title, ingredients[{name,amount,unit,calories,protein,carbs,fat}], '
-                'totals{calories,protein,carbs,fat}, 2-4 swaps[{name,why,macroImpact}], confidence (0..1), estimationNote.')
-          ];
-
-          final request2 = <Content>[
-            ..._history,
-            Content('user', enforceParts),
-          ];
-
-          GenerateContentResponse resp2;
-          try {
-            resp2 = await _withRetry(() => _model.generateContent(request2));
-          } catch (e) {
-            final fb = _makeModel(_fallbackName);
-            resp2 = await _withRetry(() => fb.generateContent(request2));
-          }
-
-          final calls2 = resp2.functionCalls;
-          if (calls2.isNotEmpty) {
-            final f = calls2.first;
-            final m = f.args;
-
-            if (f.name == 'estimate_meal_from_input') {
-              final ingredientsList = (m['ingredients'] as List?) ?? const [];
-              final ings = ingredientsList.whereType<Map>().map((raw) {
-                final mm = Map<String, Object?>.from(raw);
-                return Ingredient(
-                  name: (mm['name'] as String? ?? '').trim(),
-                  amount: _asDouble(mm['amount']),
-                  unit: (mm['unit'] as String? ?? '').trim(),
-                  calories: _asDouble(mm['calories']),
-                  protein: _asDouble(mm['protein']),
-                  carbs: _asDouble(mm['carbs']),
-                  fat: _asDouble(mm['fat']),
-                );
-              }).toList();
-
-              final totalsMap = _mapCast<Map<String, Object?>>(m['totals'], const {});
-              final totals = (totalsMap.isNotEmpty)
-                  ? MealTotals(
-                      _asDouble(totalsMap['calories']),
-                      _asDouble(totalsMap['protein']),
-                      _asDouble(totalsMap['carbs']),
-                      _asDouble(totalsMap['fat']),
-                    )
-                  : MealTotals(
-                      _sum(ings.map((i) => i.calories)),
-                      _sum(ings.map((i) => i.protein)),
-                      _sum(ings.map((i) => i.carbs)),
-                      _sum(ings.map((i) => i.fat)),
-                    );
-
-              final swaps = ((m['swaps'] as List?) ?? const [])
-                  .whereType<Map>()
-                  .map((raw) {
-                    final mm = Map<String, Object?>.from(raw);
-                    return SwapOption(
-                      name: (mm['name'] as String? ?? '').trim(),
-                      why: (mm['why'] as String? ?? '').trim(),
-                      macroImpact: (mm['macroImpact'] as String? ?? '').trim(),
-                    );
-                  }).toList();
-
-              return ChatTurn.model(
-                'Here’s an estimated breakdown.',
-                meal: MealSuggestionDetailed(
-                  title: (m['title'] as String).trim(),
-                  ingredients: ings,
-                  totals: totals,
-                  swaps: swaps,
-                  isEstimate: true,
-                  confidence: (m['confidence'] as num?)?.toDouble(),
-                  estimationNote: m['estimationNote'] as String?,
-                  notes: m['notes'] as String?,
-                ),
-              );
-            }
-          }
-        }
-
       }
     }
 
-    final txt = resp.text ?? '(no response)';
+    final txt = (data['text'] as String?) ?? '(no response)';
     return ChatTurn.model(txt);
   }
 }

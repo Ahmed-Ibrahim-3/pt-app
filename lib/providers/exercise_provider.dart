@@ -16,11 +16,9 @@ class ExerciseHive {
   static String sessionsBoxFor(String? uid) => 'workout_sessions_${uid ?? 'anon'}';
 }
 
-const apiNinjasKey = String.fromEnvironment('API_NINJAS_KEY');
-
 final exerciseApiProvider =
-    Provider<ExerciseApiService>((_) => ExerciseApiService(apiNinjasKey));
-
+    Provider<ExerciseApiService>((_) => ExerciseApiService());
+    
 class ExerciseFilter {
   final String query;
   final String? muscle;

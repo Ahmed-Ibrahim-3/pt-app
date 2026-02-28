@@ -1,5 +1,4 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:cloud_functions/cloud_functions.dart';
 
 /// https://www.api-ninjas.com/api/exercises
 class ExerciseApiItem {
@@ -33,10 +32,11 @@ class ExerciseApiItem {
 }
 
 class ExerciseApiService {
-  ExerciseApiService(this.apiKey);
-  final String apiKey;
+  ExerciseApiService({FirebaseFunctions? functions, String region = 'europe-west2'})
+      : _callable = (functions ?? FirebaseFunctions.instanceFor(region: region))
+            .httpsCallable('apiNinjasSearchExercises');
 
-  static const _base = 'https://api.api-ninjas.com/v1';
+  final HttpsCallable _callable;
 
   Future<List<ExerciseApiItem>> search({
     String? name,
@@ -44,19 +44,19 @@ class ExerciseApiService {
     String? type,
     String? difficulty,
   }) async {
-    final params = <String, String>{
-      if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
-      if (muscle != null && muscle.trim().isNotEmpty) 'muscle': muscle.trim(),
-      if (type != null && type.trim().isNotEmpty) 'type': type.trim(),
-      if (difficulty != null && difficulty.trim().isNotEmpty) 'difficulty': difficulty.trim(),
-    };
+    final res = await _callable.call({
+      'name': name,
+      'muscle': muscle,
+      'type': type,
+      'difficulty': difficulty,
+    });
 
-    final uri = Uri.parse('$_base/exercises').replace(queryParameters: params);
-    final res = await http.get(uri, headers: {'X-Api-Key': apiKey});
-    if (res.statusCode != 200) {
-      throw Exception('Exercises API ${res.statusCode}: ${res.body}');
-    }
-    final list = (jsonDecode(res.body) as List).cast<Map<String, dynamic>>();
-    return list.map(ExerciseApiItem.fromJson).toList();
+    final data = res.data;
+    if (data is! List) return const [];
+
+    return data
+        .whereType<Map>()
+        .map((m) => ExerciseApiItem.fromJson(Map<String, dynamic>.from(m)))
+        .toList(growable: false);
   }
 }

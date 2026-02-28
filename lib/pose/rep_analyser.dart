@@ -36,13 +36,6 @@ class RepAnalyser {
 
   final AngleFilterBank _filterBank;
 
-  /// Extra smoothing on the primary rep-counting signal (after per-joint
-  /// filtering).
-  ///
-  /// When a joint gets occluded, the analyser may fall back to the opposite
-  /// side (e.g. left elbow -> right elbow). Those side-to-side swaps can create
-  /// sudden jumps that look like threshold crossings, which can lead to “half
-  /// rep” counts. This filter stabilises the combined signal.
   late OneEuroFilter _primaryFilter;
 
   _RepPhase _phase = _RepPhase.idle;
@@ -50,7 +43,6 @@ class RepAnalyser {
   int? _repStartMs;
   bool _hitOppositeExtreme = false;
 
-  // Debounce for noisy threshold crossings at the extremes.
   static const int _extremeHoldMs = 140;
   static const double _resetHysteresisDeg = 3.0;
   int? _lowHoldSinceMs;
@@ -89,16 +81,12 @@ class RepAnalyser {
     final aRaw = _primaryAngleWithFallback(filtered);
     if (aRaw == null) return null;
 
-    // Smooth the combined primary signal (helps with left/right swapping).
     final a = _primaryFilter.filter(tMs / 1000.0, aRaw);
 
     return def.startAtHigh ? _updateStartAtHigh(a, tMs) : _updateStartAtLow(a, tMs);
   }
 
   double? _primaryAngleWithFallback(Map<JointAngleKind, double> angles) {
-    // Prefer a stable signal:
-    // - If we have both left/right for the same joint, use the mean.
-    // - Otherwise use whichever side we have.
     JointAngleKind? other;
     switch (def.primaryJoint) {
       case JointAngleKind.leftKnee:
