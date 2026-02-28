@@ -26,7 +26,7 @@ from the project root,
 `flutter run`
 
 ### iOS
-#### Simulator
+#### Simulator
 
 `xcrun simctl list`
 
